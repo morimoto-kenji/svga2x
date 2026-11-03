@@ -45,6 +45,21 @@ Put it in `AUTOEXEC.BAT` after the display driver (e.g. after DOS/V's `CHEV JP`/
 active). Leave VMware's "Stretch guest" off; the window will become 1280x950/960. If the window is
 larger than the guest screen, VMware centres it.
 
+### Fitting the screen on the host
+
+The output is only pixel-sharp when VMware shows it 1:1:
+
+- **Full screen** (Ctrl+Alt+Enter) is the best choice when the host screen is large enough
+  (2x on a 1920x1080 monitor: the 1280x950 image is shown 1:1 and centred).
+- In a **window** on a 1080p monitor the menu, toolbar, tabs and status bar leave only about
+  930 lines, so the bottom of a 950/960-line image is cut off. Hide the toolbar/tabs/status bar
+  (View > Customize) to make room.
+- **"Stretch guest" on** makes everything fit, but VMware then scales the image (e.g. to about
+  97.5 % in a 1080p window) with interpolation, so edges get slightly soft (measured: about 3 % of
+  the pixels in intermediate greys instead of 3 pure colours). Fine if you prefer seeing the whole
+  screen, but not pixel-sharp.
+- 3x (1920x1440) needs a 2560x1440 or larger host screen.
+
 Before installing, SVGA2X checks that the VM allows the resolution (`SVGA_REG_MAX_WIDTH/HEIGHT`
 and VRAM size). If a `.vmx` limits the display, e.g. `svga.maxWidth = "640"`, SVGA2X refuses with
 a message; remove or raise `svga.maxWidth`, `svga.maxHeight` (and `svga.vramSize` if set).

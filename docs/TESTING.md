@@ -25,6 +25,7 @@ are run after `CHEV US`.
 | 9 | `/?`, second install refused | OK | – | OK |
 | 10 | `/S3` (1920x1425): `LATCH.BAS` identical, every 3x3 block uniform; MJL and return to 3x | OK | – | OK |
 | 11 | `/S1`, `/S4` rejected; 2x regression (`LATCH.BAS`, `COLORS.BAS`) after the `/S` change | OK | – | OK |
+| 12 | Host display: full screen on a 1920x1080 host shows the 1280x950 image 1:1 and centred (all 1,216,000 pixels identical to the guest framebuffer); window without stretch: pure colours, bottom cut off (~930 lines available); window with "Stretch guest": fits, but ~3 % of the pixels are interpolated greys | OK | – | – |
 
 Bugs found and fixed by these tests:
 
