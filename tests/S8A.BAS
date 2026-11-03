@@ -1,0 +1,4 @@
+SCREEN 8
+FOR i = 0 TO 15: LINE (i * 40, 0)-(i * 40 + 39, 99), i, BF: NEXT
+LOCATE 20, 1: PRINT "S8 direct": SLEEP
+SCREEN 0: WIDTH 80: SYSTEM

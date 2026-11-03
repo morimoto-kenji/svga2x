@@ -1,0 +1,26 @@
+' Mode switching: SCREEN 9 (640x350x16), SCREEN 8 (640x200x16, double scan), SCREEN 13 (320x200x256)
+SCREEN 9
+FOR i = 0 TO 15
+  LINE (i * 40, 0)-(i * 40 + 39, 174), i, BF
+NEXT
+LOCATE 20, 1: PRINT "SCREEN 9: press a key"
+SLEEP
+SCREEN 8
+FOR i = 0 TO 15
+  LINE (i * 40, 0)-(i * 40 + 39, 99), i, BF
+NEXT
+LOCATE 20, 1: PRINT "SCREEN 8: press a key"
+SLEEP
+SCREEN 13
+FOR i = 0 TO 255
+  LINE (i, 0)-(i, 99), i
+NEXT
+LOCATE 20, 1: PRINT "SCREEN 13: press a key"
+SLEEP
+SCREEN 12
+CIRCLE (320, 240), 200, 14
+LOCATE 20, 1: PRINT "SCREEN 12: press a key"
+SLEEP
+SCREEN 0
+WIDTH 80
+SYSTEM

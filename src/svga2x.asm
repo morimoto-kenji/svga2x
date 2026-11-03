@@ -1,6 +1,6 @@
 ; SVGA2X - show a DOS/V (VGA 640x480 16-colour planar) screen at 2x on VMware SVGA II
 ;
-; Copyright (c) 2026 SVGA2X contributors
+; Copyright (c) 2026 Kenji Morimoto
 ; SPDX-License-Identifier: MIT
 ;
 ; Build:  nasm -f bin -o SVGA2X.COM svga2x.asm
@@ -113,9 +113,7 @@ int08:  pushf
 int10:  inc     byte [cs:in10]
         mov     [cs:lastax], ax
         mov     [cs:lastbx], bx
-        cmp     ah, 0
-        je      near .pre
-        cmp     ax, 4F02h
+        cmp     ax, 4F02h               ; VBE set mode: SVGA off before (the VBE BIOS takes over)
         jne     near .go
 .pre:   cmp     byte [cs:busy], 0
         jne     near .go
@@ -142,7 +140,10 @@ int10:  inc     byte [cs:in10]
         jne     near .done
         call    getpal
         jmp     near .done
-.mode:  mov     byte [susp], 0
+.mode:  cmp     byte [enabled], 0        ; BIOS set mode: SVGA off *after* the mode set.  Turning it
+        je      near .mode2              ; off before made VMware show double-scan modes (640x200,
+        call    disable                  ; QBASIC SCREEN 8) as garbage.
+.mode2: mov     byte [susp], 0
         mov     byte [force], 1
         call    getpal
         jmp     near .done
@@ -157,8 +158,20 @@ int10:  inc     byte [cs:in10]
         pop     ds
         popad
         dec     byte [cs:in10]
-        popf
-        retf    2
+        ; Return the BIOS result flags (CF, ZF, ...) but the caller's IF/TF: the BIOS was called
+        ; with IF=0 (we are inside an INT), so passing its flags straight back would leave the
+        ; caller running with interrupts disabled.
+        push    bp
+        mov     bp, sp                  ; [bp+2] BIOS flags, [bp+4] IP, [bp+6] CS, [bp+8] caller flags
+        push    ax
+        mov     ax, [bp + 2]
+        and     ax, 0FCFFh              ; drop TF, IF
+        and     word [bp + 8], 0300h    ; keep caller TF, IF
+        or      [bp + 8], ax
+        pop     ax
+        pop     bp
+        add     sp, 2                   ; discard the BIOS flags copy
+        iret
 
 ;--------------------------------------------------------------------------------------------------
 ; INT 2Fh: install check
@@ -363,6 +376,7 @@ hwchk:  mov     dx, 3CCh                ; misc output: colour (3Dx) addressing?
         RDREG   13h, c13
         RDREG   0Ch, c0c
         RDREG   0Dh, c0d
+        RDREG   09h, c09
         mov     al, [t_ci]
         out     dx, al
         sti
@@ -389,6 +403,8 @@ hwchk:  mov     dx, 3CCh                ; misc output: colour (3Dx) addressing?
         cmp     bx, MAXLINES
         ja      near .bad
         cmp     byte [c13], 28h         ; 80 bytes per line
+        jne     near .bad
+        test    byte [c09], 9Fh         ; no double scan, 1 scan line per row (rejects 640x200 modes)
         jne     near .bad
         mov     ah, [c0c]
         mov     al, [c0d]
@@ -594,6 +610,7 @@ c07     db      0
 c13     db      0
 c0c     db      0
 c0d     db      0
+c09     db      0
         align   4, db 0
 pal32   times 16 dd 0
 hashes  times MAXLINES dd 0
