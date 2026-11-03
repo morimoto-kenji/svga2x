@@ -1297,7 +1297,17 @@ init:   cld
         mov     es, [2Ch]               ; free the environment
         mov     ah, 49h
         int     21h
+        mov     word [2Ch], 0
         PRINT   m_inst
+        ; Close the standard handles: a resident program keeps its open files, so "SVGA2X > NUL"
+        ; would leave one system file table entry in use for good, and after enough installs
+        ; redirection and pipes fail ("Cannot execute FIND.EXE").
+        xor     bx, bx
+.cl:    mov     ah, 3Eh
+        int     21h
+        inc     bx
+        cmp     bx, 5
+        jb      short .cl
         mov     dx, resend
         add     dx, 15
         shr     dx, 4

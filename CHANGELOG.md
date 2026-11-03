@@ -8,6 +8,9 @@
 - Fix: INT 10h calls returned CF=1 (and other flags) left over from SVGA2X's own compare instead of
   the caller's flags, whenever the BIOS function returns with IRET. QBASIC `PALETTE` without
   arguments failed with "Illegal function call". The BIOS is now called with the caller's flags.
+- Fix: the resident part kept the standard handles open, so each `SVGA2X > NUL` used up one
+  DOS file table entry for good; after enough installs, redirection and pipes failed ("Cannot
+  execute FIND.EXE"). The handles are now closed before going resident.
 - The install message points to `/?` instead of listing only `/R`.
 
 ## 0.3.0 (unreleased)

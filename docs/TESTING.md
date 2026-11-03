@@ -34,6 +34,7 @@ are run after `CHEV US`.
 | 17 | Long run, 60 min: `SCROLL.BAT` (endless `DIR` in DOS/V) with a capture every 30 s (118 captures): every 2x2 block uniform, picture keeps changing, DOS clock within 1 s of the host, no memory loss | – | – | OK (0.3.1) |
 | 18 | Long run, 60 min: `STRESS.BAS` (SCREEN 12 drawing, `PALETTE` changes and reset, coloured text output, SCREEN 9, 80x50 text, in a loop; 116 captures): every block uniform, no errors, clock within 1 s | – | – | OK (0.3.1) |
 | 19 | Speed of endless output: 30 × `DIR C:\DOS /W` takes 20.8 s with SVGA2X (about 17.4 s without), and the 2x picture is updated throughout | – | – | OK (0.3.1) |
+| 20 | 20 rounds of `/U`, `CHEV US`, install, `/U`, `/S3`, `CHEV JP`, `/U`, install (output redirected to NUL): ends in DOS/V 2x, resident size and total free memory unchanged, pipes still work | – | – | OK (0.3.1) |
 
 Bugs found and fixed by these tests:
 
@@ -46,6 +47,9 @@ Bugs found and fixed by these tests:
   is done at the end of that INT 10h).
 - (test 18) QBASIC `PALETTE` without arguments failed with "Illegal function call": the INT 10h hook
   called the BIOS with its own flags, so callers got CF=1 back. Fixed in 0.3.1.
+- (test 20) After repeated `SVGA2X > NUL`, pipes failed ("Cannot execute FIND.EXE"): the resident
+  part kept its standard handles open, leaking one DOS file table entry per install. Fixed in
+  0.3.1 (handles closed before going resident).
 
 ## Host CPU (VM process, one core = 100 %, DOS prompt idle)
 
