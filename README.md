@@ -1,13 +1,13 @@
 # SVGA2X
 
-**Crisp 2x display for DOS (DOS/V) screens in VMware — a tiny TSR, no host tools needed.**
+**Crisp 2x / 3x display for DOS (DOS/V) screens in VMware — a tiny TSR, no host tools needed.**
 
 [日本語版 README](README.ja.md)
 
 VMware shows a DOS guest's 640x480 screen as a small window, and its "stretch" option makes it
 blurry. SVGA2X runs *inside* the DOS guest: it mirrors the VGA 640x480 16-colour screen to the
-VMware SVGA II framebuffer at exactly 2x (each pixel becomes a 2x2 block), so the window is twice
-the size and pixel-sharp. Because it lives in the guest, the VM behaves the same on any host.
+VMware SVGA II framebuffer at exactly 2x or 3x (each pixel becomes a 2x2 or 3x3 block), so the
+window is two or three times the size and pixel-sharp. Because it lives in the guest, the VM behaves the same on any host.
 
 It was written for Japanese DOS/V (whose text console is drawn in VGA graphics mode by
 `JDISP.SYS`), but it works with anything that uses a 640-pixel-wide 16-colour planar VGA mode
@@ -15,13 +15,14 @@ It was written for Japanese DOS/V (whose text console is drawn in VGA graphics m
 
 ## Features
 
-- Exact nearest-neighbour 2x scaling, 32-bit colour (palette read from the VGA DAC)
+- Exact nearest-neighbour 2x (1280x960) or 3x (1920x1440) scaling, 32-bit colour (palette read
+  from the VGA DAC)
 - Follows the number of visible lines (e.g. DOS/V's 475 lines → 1280x950, 480 lines → 1280x960)
 - Steps aside automatically for text modes, other graphics modes and VESA (VBE) modes, and comes
   back when the 640-wide planar mode returns
 - Only changed lines are redrawn
 - Works in real mode (HIMEM only) **and** under V86 memory managers (MS EMM386, JemmEx)
-- About 11 KB resident; can be removed with `/U`
+- About 14 KB resident; can be removed with `/U`
 
 ## Requirements
 
@@ -33,7 +34,8 @@ It was written for Japanese DOS/V (whose text console is drawn in VGA graphics m
 ## Usage
 
 ```
-SVGA2X          install (resident)
+SVGA2X          install (resident), 2x
+SVGA2X /S3      install, 3x (1920x1440; needs a host screen of that size)
 SVGA2X /U       remove
 SVGA2X /Rn      update every n timer ticks (n = 1..9, default 1 = 18.2 times/s)
 SVGA2X /?       help
@@ -42,6 +44,10 @@ SVGA2X /?       help
 Put it in `AUTOEXEC.BAT` after the display driver (e.g. after DOS/V's `CHEV JP`/`JDISP.SYS` are
 active). Leave VMware's "Stretch guest" off; the window will become 1280x950/960. If the window is
 larger than the guest screen, VMware centres it.
+
+Before installing, SVGA2X checks that the VM allows the resolution (`SVGA_REG_MAX_WIDTH/HEIGHT`
+and VRAM size). If a `.vmx` limits the display, e.g. `svga.maxWidth = "640"`, SVGA2X refuses with
+a message; remove or raise `svga.maxWidth`, `svga.maxHeight` (and `svga.vramSize` if set).
 
 ## Building
 
@@ -61,7 +67,7 @@ or run `build.bat` (Windows) / `make`.
 | same, MS EMM386 4.95 | OK (via INT 15h AH=87h) |
 | same, JemmEx 5.86 (`I=TEST SPLIT NOINVLPG`) | OK (via INT 15h AH=87h) |
 
-Host CPU use of the idle VM (one core = 100 %): 3.4 % without SVGA2X, about 8–11 % with it (5–6 % with `/R2`).
+Host CPU use of the idle VM (one core = 100 %): 3.4 % without SVGA2X, about 8–11 % with it (5–6 % with `/R2`), about the same at 3x.
 See [docs/TESTING.md](docs/TESTING.md) for the full test record and [docs/TECHNICAL.md](docs/TECHNICAL.md) for how it works.
 
 ## Limitations / known issues

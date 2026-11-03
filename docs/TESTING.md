@@ -23,6 +23,8 @@ are run after `CHEV US`.
 | 7 | `CHEV US` / `CHEV JP` (text mode ↔ DOS/V) | OK | OK | OK |
 | 8 | `/U` (memory freed, plain VGA back); refused if a later TSR hooked the same vectors | OK | OK | OK |
 | 9 | `/?`, second install refused | OK | – | OK |
+| 10 | `/S3` (1920x1425): `LATCH.BAS` identical, every 3x3 block uniform; MJL and return to 3x | OK | – | OK |
+| 11 | `/S1`, `/S4` rejected; 2x regression (`LATCH.BAS`, `COLORS.BAS`) after the `/S` change | OK | – | OK |
 
 Bugs found and fixed by these tests:
 
@@ -38,11 +40,14 @@ Bugs found and fixed by these tests:
 | Real mode | 3.4 % | 8.9 % | – |
 | MS EMM386 | – | 10.6 % | 6.2 % |
 | JemmEx | – | 8.1 % | 4.7 % |
+| Real mode, `/S3` | – | 8.3 % | – |
+| JemmEx, `/S3` | – | 7.5 % | – |
 
-Full-screen scrolling (`dir`) under V86 managers: 54 % (EMM386) / 71 % (JemmEx).
+Full-screen scrolling (`dir`) under V86 managers: 54 % (EMM386) / 71 % (JemmEx) at 2x, 61 % (JemmEx) at 3x.
 
 ## Not tested yet
 
+- The refusal message when the `.vmx` limits the resolution (`svga.maxWidth` etc.)
 - Long-running stability (hours), serial communication programs running at the same time
 - DOS extenders (DOS/4GW, DJGPP), Windows 3.1 enhanced mode
 - VirtualBox VMSVGA, QEMU `-vga vmware`, other VMware versions

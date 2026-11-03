@@ -17,8 +17,8 @@ This was verified empirically on VMware Workstation 26.0.1 (virtual hardware 19)
 
 ```
 SVGA_REG_ID       <- 0x90000002 (SVGA_ID_2), read back to confirm
-SVGA_REG_WIDTH    <- 1280
-SVGA_REG_HEIGHT   <- 2 * visible lines
+SVGA_REG_WIDTH    <- 640 * scale          (scale = 2 or 3, /S option)
+SVGA_REG_HEIGHT   <- scale * visible lines
 SVGA_REG_BPP      <- 32
 SVGA_REG_ENABLE   <- 1
 pitch  = SVGA_REG_BYTES_PER_LINE
@@ -110,6 +110,5 @@ dominates the cost under VMware: per-line register handling cost 19.4 % host CPU
 
 - JemmEx JLM back-end: map the FB into Jemm's linear address space (`_PageReserve`,
   `_PageCommitPhys`) and copy from ring 0 — removes the per-line INT 15h cost.
-- Integer factors other than 2 (e.g. 3x for 4K hosts).
 - Text mode support (render the 720x400 text screen with the VGA font).
 - VCPI back-end for other memory managers.

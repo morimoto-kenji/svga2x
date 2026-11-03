@@ -25,16 +25,20 @@
 CH_LINES  equ   8                       ; lines read from VGA per chunk
 CHUNKSZ   equ   CH_LINES*80             ; bytes per plane per chunk
 MAXLINES  equ   480
+MAXSCALE  equ   3
 
 ; VMware SVGA II registers (index/value port pair at BAR0)
 SVGA_REG_ID             equ 0
 SVGA_REG_ENABLE         equ 1
 SVGA_REG_WIDTH          equ 2
 SVGA_REG_HEIGHT         equ 3
+SVGA_REG_MAX_WIDTH      equ 4
+SVGA_REG_MAX_HEIGHT     equ 5
 SVGA_REG_BITS_PER_PIXEL equ 7
 SVGA_REG_BYTES_PER_LINE equ 12
 SVGA_REG_FB_START       equ 13
 SVGA_REG_FB_OFFSET      equ 14
+SVGA_REG_VRAM_SIZE      equ 15
 SVGA_ID_2               equ 90000002h
 
 MUX_FUNC  equ   0E700h                  ; INT 2Fh install check: AX=E700h -> AL=FFh, BX='2X', ES=seg
@@ -73,7 +77,7 @@ MUX_SIG   equ   5832h                   ; '2X'
 ; Resident part
 ;==================================================================================================
 entry:  jmp     near init
-signature db    'SVGA2X01'
+signature db    'SVGA2X02'
 
 ;--------------------------------------------------------------------------------------------------
 ; INT 08h: chain first (EOI is sent by the BIOS), then do the work with interrupts enabled.
@@ -330,7 +334,7 @@ work:   smsw    ax
         cmp     byte [force], 0
         je      near .next
 .chg:   mov     [di + hashes], edx
-        ; ---- convert 640 planar pixels to 1280 32-bit pixels ----
+        ; ---- convert 640 planar pixels to 640*scale 32-bit pixels ----
         lea     si, [bx + chunk]
         mov     di, linebuf
         mov     cx, 80
@@ -352,18 +356,24 @@ work:   smsw    ax
         rcl     al, 1
         and     eax, 0Fh
         mov     eax, [eax*4 + pal32]
-        stosd
-        stosd
+        push    cx
+        movzx   cx, byte [scale]
+        rep     stosd
+        pop     cx
         loop    .bit
         pop     cx
         loop    .col
-        movzx   eax, bp                 ; FB address of line 2*y
-        shl     eax, 1
+        movzx   eax, bp                 ; FB address of line scale*y
+        movzx   ecx, byte [scale]
+        mul     ecx
         mul     dword [pitch]
         add     eax, [fbbase]
+        movzx   cx, byte [scale]        ; write the line scale times
+.rep:   push    cx
         call    mvline
+        pop     cx
         add     eax, [pitch]
-        call    mvline
+        loop    .rep
 .next:  add     word [srcoff], 80
         inc     bp
         cmp     bp, [vlines]
@@ -435,13 +445,17 @@ hwchk:  mov     dx, 3CCh                ; misc output: colour (3Dx) addressing?
         ret
 
 ;--------------------------------------------------------------------------------------------------
-; enable: 1280 x (2*vlines) x 32bpp
+; enable: (640*scale) x (vlines*scale) x 32bpp
 ;--------------------------------------------------------------------------------------------------
-enable: SVGA_OUT SVGA_REG_WIDTH, 1280
+enable: movzx   ebx, byte [scale]
+        imul    ebx, ebx, 640
+        mov     ax, SVGA_REG_WIDTH
+        call    svga_out
         mov     ax, [vlines]
         mov     [curv], ax
         movzx   ebx, ax
-        shl     ebx, 1
+        movzx   ecx, byte [scale]
+        imul    ebx, ecx
         mov     ax, SVGA_REG_HEIGHT
         call    svga_out
         SVGA_OUT SVGA_REG_BITS_PER_PIXEL, 32
@@ -521,7 +535,7 @@ unreal: cli
         ret
 
 ;--------------------------------------------------------------------------------------------------
-; mvline: copy linebuf (5120 bytes) to physical address EAX.  Preserves EAX.
+; mvline: copy linebuf (640*scale dwords) to physical address EAX.  Preserves EAX.
 ;--------------------------------------------------------------------------------------------------
 mv87:   mov     [g87 + 1Ah], ax         ; V86: INT 15h AH=87h, destination descriptor base
         push    eax
@@ -533,7 +547,7 @@ mv87:   mov     [g87 + 1Ah], ax         ; V86: INT 15h AH=87h, destination descr
         push    si
         push    cx
         mov     si, g87
-        mov     cx, 2560
+        mov     cx, [lbwords]
         mov     ah, 87h
         int     15h
         pop     cx
@@ -548,7 +562,7 @@ mvline: cmp     byte [v86], 0
         pop     es                      ; ES base 0, limit 4 GB (unreal)
         mov     edi, eax
         mov     esi, linebuf
-        mov     ecx, 1280
+        mov     ecx, [lbdw]
         a32 rep movsd
         pop     es
         ret
@@ -600,6 +614,8 @@ old2f   dd      0
 fbstart dd      0
 pitch   dd      0
 fbbase  dd      0
+lbdw    dd      0                       ; line length in dwords (640*scale)
+lbwords dw      0                       ; line length in words (for INT 15h/87h)
 vlines  dw      0
 curv    dw      0
 iobase  dw      0
@@ -613,6 +629,7 @@ enabled db      0
 susp    db      0
 force   db      0
 paldirty db     0
+scale   db      2
 s_si    db      0
 s_mm    db      0
 s_gi    db      0
@@ -633,7 +650,7 @@ c09     db      0
 pal32   times 16 dd 0
 hashes  times MAXLINES dd 0
 chunk   times 4*CHUNKSZ db 0
-linebuf times 1280*4 db 0
+linebuf times 640*MAXSCALE*4 db 0
 %ifdef TRACE
 trpos   dw      0
 trbuf   times 1024 db 0
@@ -650,7 +667,7 @@ init:   cld
         jz      short .rm
         mov     byte [v86], 1
 .rm:
-        ; ---- command line: /U, /Rn ----
+        ; ---- command line: /U, /Rn, /Sn ----
         mov     byte [rate], 1
         mov     si, 81h
 .pa:    lodsb
@@ -668,8 +685,18 @@ init:   cld
         jne     short .notu
         mov     byte [f_u], 1
         jmp     short .pa
-.notu:  cmp     al, 'R'
-        jne     short .pa
+.notu:  cmp     al, 'S'
+        jne     short .nots
+        lodsb
+        sub     al, '0'
+        cmp     al, 2
+        jb      near e_scale
+        cmp     al, MAXSCALE
+        ja      near e_scale
+        mov     [scale], al
+        jmp     short .pa
+.nots:  cmp     al, 'R'
+        jne     near .pa
         lodsb
         sub     al, '0'
         cmp     al, 1
@@ -723,6 +750,26 @@ init:   cld
         cmp     eax, 100000h
         jb      near e_id
         mov     [fbstart], eax
+        ; ---- line length, and does the VM allow (640*scale) x (480*scale) x 32bpp? ----
+        movzx   eax, byte [scale]
+        imul    eax, eax, 640
+        mov     [lbdw], eax
+        shl     ax, 1
+        mov     [lbwords], ax
+        SVGA_IN SVGA_REG_MAX_WIDTH
+        cmp     eax, [lbdw]
+        jb      near e_size
+        movzx   ebx, byte [scale]
+        imul    ebx, ebx, MAXLINES
+        SVGA_IN SVGA_REG_MAX_HEIGHT
+        cmp     eax, ebx
+        jb      near e_size
+        imul    ebx, [lbdw]             ; bytes needed = width*4 * height
+        shl     ebx, 2
+        SVGA_IN SVGA_REG_VRAM_SIZE
+        mov     [vram], eax
+        cmp     eax, ebx
+        jb      near e_size
         LINADDR linebuf                 ; INT 15h/87h source descriptor = linebuf
         mov     [g87 + 12h], ax
         shr     eax, 16
@@ -752,16 +799,18 @@ init:   cld
         mov     cx, 32
         repe    cmpsb
         je      near e_87
-        ; 2) write a pattern at FB+15 MB (off-screen) and read it back
+        ; 2) write a pattern into the last page of VRAM (off-screen) and read it back
         LINADDR tbP
         mov     ebx, eax
         mov     edx, [fbstart]
-        add     edx, 0F00000h
+        add     edx, [vram]
+        sub     edx, 1000h
         mov     cx, 16
         call    t87
         jb      near e_87
         mov     ebx, [fbstart]
-        add     ebx, 0F00000h
+        add     ebx, [vram]
+        sub     ebx, 1000h
         LINADDR tbA
         mov     edx, eax
         mov     cx, 16
@@ -872,6 +921,10 @@ exit1:  mov     ax, 4C01h
         int     21h
 e_87:   PRINT   m_87
         jmp     near exit1
+e_scale: PRINT  m_scale
+        jmp     near exit1
+e_size: PRINT   m_size
+        jmp     near exit1
 
 ; t87: EBX = source physical address, EDX = destination physical address, CX = words; CF on error
 t87:    mov     [gt + 12h], bx
@@ -897,11 +950,13 @@ tbB     times 32 db 0EEh
 tbP     db      'SVGA2X INT15/87 write test 1234', 0
 rseg    dw      0
 f_u     db      0
+vram    dd      0
 
-m_title   db 'SVGA2X 0.1.0 - VGA 640x480 16-colour screen at 2x on VMware SVGA II', 13, 10, '$'
+m_title   db 'SVGA2X 0.2.0 - VGA 640x480 16-colour screen at 2x/3x on VMware SVGA II', 13, 10, '$'
 m_inst    db 'Installed.  SVGA2X /U = remove, /Rn = update every n ticks (1-9)', 13, 10, '$'
-m_help    db 'Usage: SVGA2X [/U] [/Rn]', 13, 10
+m_help    db 'Usage: SVGA2X [/Sn] [/Rn] | /U', 13, 10
           db '  (none)  install resident', 13, 10
+          db '  /Sn     scale factor, n = 2 (default, 1280x960) or 3 (1920x1440)', 13, 10
           db '  /U      remove from memory', 13, 10
           db '  /Rn     update every n timer ticks, n = 1..9 (default 1 = 18.2 Hz)', 13, 10
           db 'Works in real mode (HIMEM only) and under EMM386 / JEMMEX (V86 mode).', 13, 10, '$'
@@ -913,3 +968,6 @@ m_v86ok   db 'V86 mode: framebuffer access via INT 15h AH=87h verified.', 13, 10
 m_87      db 'Error: INT 15h AH=87h cannot reach the framebuffer (V86 mode).', 13, 10, '$'
 m_nodev   db 'Error: VMware SVGA II not found.', 13, 10, '$'
 m_id      db 'Error: unexpected SVGA ID or framebuffer address.', 13, 10, '$'
+m_scale   db 'Error: /S must be 2 or 3.', 13, 10, '$'
+m_size    db 'Error: the VM does not allow this resolution (max width/height or VRAM too small;', 13, 10
+          db '       check svga.maxWidth, svga.maxHeight, svga.vramSize in the .vmx).', 13, 10, '$'
