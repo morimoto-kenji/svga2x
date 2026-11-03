@@ -111,15 +111,35 @@ int08:  pushf
 ; INT 10h: turn SVGA off before a mode set, re-read the palette / track VBE modes afterwards.
 ;--------------------------------------------------------------------------------------------------
 int10:  inc     byte [cs:in10]
-        mov     [cs:lastax], ax
-        mov     [cs:lastbx], bx
-        cmp     ax, 4F02h               ; VBE set mode: SVGA off before (the VBE BIOS takes over)
-        jne     near .go
-.pre:   cmp     byte [cs:busy], 0
-        jne     near .go
-        cmp     byte [cs:enabled], 0
-        je      near .go
-        call    disable
+%ifdef TRACE
+        cmp     ah, 02h                 ; debug: log AX/BX of INT 10h calls (except text output)
+        je      .notr
+        cmp     ah, 03h
+        je      .notr
+        cmp     ah, 09h
+        je      .notr
+        cmp     ah, 0Eh
+        je      .notr
+        cmp     ah, 08h
+        je      .notr
+        push    si
+        mov     si, [cs:trpos]
+        mov     [cs:trbuf + si], ax
+        mov     [cs:trbuf + si + 2], bx
+        add     si, 4
+        and     si, 1023
+        mov     [cs:trpos], si
+        pop     si
+.notr:
+%endif
+        ; The caller's AX/BX are kept on the stack, not in variables: INT 10h is re-entered (e.g.
+        ; DOS/V's JDISP calls INT 10h itself while handling a mode set), and a single variable
+        ; would be overwritten by the nested call.
+        push    bx
+        push    ax
+        cmp     ax, 4F02h               ; VBE set mode: let the VBE BIOS take the SVGA over as it is.
+        jne     near .go                ; (Writing ENABLE=0 first made VMware's VBE BIOS fail: black
+        mov     byte [cs:enabled], 0    ; screen.)  Just forget that we own it.
 .go:    pushf
         call    far [cs:old10]
         pushf                           ; keep the flags returned by the BIOS
@@ -131,7 +151,8 @@ int10:  inc     byte [cs:in10]
         push    cs
         pop     es
         cld
-        mov     ax, [lastax]
+        mov     bp, sp                  ; [bp+38] caller AX, [bp+40] caller BX
+        mov     ax, [bp + 38]
         cmp     ah, 0
         je      near .mode
         cmp     ax, 4F02h
@@ -149,7 +170,7 @@ int10:  inc     byte [cs:in10]
         jmp     near .done
 .vbe:   mov     byte [force], 1
         mov     byte [susp], 0
-        mov     bx, [lastbx]
+        mov     bx, [bp + 40]
         and     bx, 1FFh
         cmp     bx, 100h                ; VESA mode -> leave the hardware alone
         jb      near .done
@@ -162,17 +183,16 @@ int10:  inc     byte [cs:in10]
         ; with IF=0 (we are inside an INT), so passing its flags straight back would leave the
         ; caller running with interrupts disabled.
         push    bp
-        mov     bp, sp                  ; [bp+2] BIOS flags, [bp+4] IP, [bp+6] CS, [bp+8] caller flags
-        push    ax
+        mov     bp, sp                  ; [bp+2] BIOS flags, [bp+4] AX, [bp+6] BX,
+        push    ax                      ; [bp+8] IP, [bp+10] CS, [bp+12] caller flags
         mov     ax, [bp + 2]
         and     ax, 0FCFFh              ; drop TF, IF
-        and     word [bp + 8], 0300h    ; keep caller TF, IF
-        or      [bp + 8], ax
+        and     word [bp + 12], 0300h   ; keep caller TF, IF
+        or      [bp + 12], ax
         pop     ax
         pop     bp
-        add     sp, 2                   ; discard the BIOS flags copy
+        add     sp, 6                   ; discard BIOS flags, caller AX/BX copies
         iret
-
 ;--------------------------------------------------------------------------------------------------
 ; INT 2Fh: install check
 ;--------------------------------------------------------------------------------------------------
@@ -583,8 +603,6 @@ fbbase  dd      0
 vlines  dw      0
 curv    dw      0
 iobase  dw      0
-lastax  dw      0
-lastbx  dw      0
 crtstart dw     0
 srcoff  dw      0
 busy    db      0
@@ -616,6 +634,10 @@ pal32   times 16 dd 0
 hashes  times MAXLINES dd 0
 chunk   times 4*CHUNKSZ db 0
 linebuf times 1280*4 db 0
+%ifdef TRACE
+trpos   dw      0
+trbuf   times 1024 db 0
+%endif
 resend:
 
 ;==================================================================================================
