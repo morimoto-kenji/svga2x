@@ -11,6 +11,13 @@
 - Fix: the resident part kept the standard handles open, so each `SVGA2X > NUL` used up one
   DOS file table entry for good; after enough installs, redirection and pipes failed ("Cannot
   execute FIND.EXE"). The handles are now closed before going resident.
+- DOS/V with JDISP.SYS hardware scrolling (the default without `/HS=OFF`) is now doubled: VGA
+  graphics with a line stride other than 80 bytes (CRTC 13h, here 128) and the CRTC line compare
+  wrap are followed. Before, such a screen was treated as unsupported and left at 1x.
+- Windows 3.x: SVGA2X steps aside for good when Windows starts (INT 2Fh 1605h). With MS EMM386,
+  framebuffer copies above the first 4 MB after Windows had run triple-faulted the VM.
+- INT 15h AH=87h: the descriptor table is rebuilt for every call (the BIOS / memory manager
+  writes into it).
 - The install message points to `/?` instead of listing only `/R`; messages fit in 80 columns.
 - README: VMware applies `svga.maxWidth` / `svga.maxHeight` only with `svga.autodetect = "FALSE"`.
 

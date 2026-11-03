@@ -28,7 +28,8 @@ The 2x screen is pixel-for-pixel the 1x screen with every pixel turned into a 2x
 
 ## Features
 
-- Japanese DOS/V screens (VGA 640x480, 16 colours) at 2x / 3x (DOS/V's 475-line screen → 1280x950)
+- Japanese DOS/V screens (VGA 640x480, 16 colours) at 2x / 3x (DOS/V's 475-line screen → 1280x950;
+  with or without JDISP.SYS hardware scrolling)
 - 80-column text screens of English DOS etc. (80x25, 80x43, 80x50) at 2x / 3x as well
 - Other screens (320x200 games, 256 colours, VESA, ...) automatically get the normal display back;
   SVGA2X resumes when a supported screen returns
@@ -110,8 +111,10 @@ See [docs/TESTING.md](docs/TESTING.md) for the full test record and [docs/TECHNI
 - Text modes: blinking characters are shown without blinking; 512-character fonts use font map A
   only; a font loaded directly through the VGA ports (not via INT 10h AH=11h) is picked up at the
   next mode set; 40-column modes are not doubled.
-- Windows 3.x enhanced mode / DOS boxes: SVGA2X pauses itself when the CPU is in protected mode
-  and it was installed in real mode.
+- Windows 3.x: when Windows starts, SVGA2X steps aside for good (Windows shows its normal
+  640x480 screen, and DOS stays at 1x after Windows exits; Windows can change its own resolution).
+  Reason: with MS EMM386, framebuffer copies after Windows had run sometimes crashed the VM
+  (triple fault). Run `SVGA2X /U` and `SVGA2X` to get 2x back, at your own risk.
 
 ## License
 

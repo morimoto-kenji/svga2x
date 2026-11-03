@@ -258,18 +258,28 @@ int10:  inc     byte [cs:in10]
 ; INT 2Fh: install check
 ;--------------------------------------------------------------------------------------------------
 int2f:  cmp     ax, MUX_FUNC
-        jne     short .chain
+        jne     short .win
         mov     al, 0FFh
         mov     bx, MUX_SIG
         push    cs
         pop     es
         iret
+        ; Windows 3.x (INT 2Fh AX=1605h, enhanced/standard mode starting): SVGA2X steps aside for
+        ; good.  Under MS EMM386, INT 15h AH=87h moves into the framebuffer above its first 4 MB
+        ; triple-faulted the VM after Windows had been started and exited (not always the first
+        ; time), whether or not SVGA2X had been active while Windows ran.  The normal VGA picture
+        ; is shown from then on; run SVGA2X /U and SVGA2X again to get 2x back (at your own risk).
+.win:   cmp     ax, 1605h
+        jne     short .chain
+        mov     byte [cs:winpause], 1
 .chain: jmp     far [cs:old2f]
 
 ;--------------------------------------------------------------------------------------------------
 ; work: one update pass.  DS=ES=CS, IF=1.
 ;--------------------------------------------------------------------------------------------------
-work:   smsw    ax
+work:   cmp     byte [winpause], 0      ; Windows is starting or exiting
+        jne     near .ret
+        smsw    ax
         test    al, 1
         jz      short .rm               ; protected/V86 mode now:
         cmp     byte [v86], 0           ;   OK only if we were installed under a V86 monitor
@@ -312,12 +322,29 @@ work:   smsw    ax
         call    unreal
 .nour:  cmp     byte [curmode], 2
         je      near textpass
-        mov     ax, [crtstart]
-        mov     [srcoff], ax
         xor     bp, bp                  ; BP = line
 
 .line:  test    bp, CH_LINES-1
         jne     near .noread
+        ; ---- VGA addresses of the next CH_LINES lines: start + y * stride, and from the line
+        ;      after the line compare on, (y - LC - 1) * stride (DOS/V hardware scroll) ----
+        xor     si, si
+.la:    mov     ax, bp
+        add     ax, si
+        cmp     ax, [lcmp]
+        jbe     short .la1
+        sub     ax, [lcmp]
+        dec     ax
+        mul     word [gstride]
+        jmp     short .la2
+.la1:   mul     word [gstride]
+        add     ax, [crtstart]
+.la2:   mov     di, si
+        shl     di, 1
+        mov     [laddr + di], ax
+        inc     si
+        cmp     si, CH_LINES
+        jb      short .la
         ; ---- read CH_LINES lines of all 4 planes into chunk[] ----
         cli
         mov     dx, 3C4h                ; sequencer: save index and map mask, enable all planes
@@ -355,10 +382,19 @@ work:   smsw    ax
 %rep 4
         mov     al, p
         out     dx, al
-        mov     si, [cs:srcoff]
         mov     di, chunk + p*CHUNKSZ
-        mov     cx, CHUNKSZ/4
+        xor     bx, bx
+.r%[p]:  mov     si, [cs:laddr + bx]
+        cmp     si, 10000h - 80         ; line runs past the end of the 64K plane: byte copy
+        ja      short .w%[p]          ; (SI wraps to 0 like the VGA address counter)
+        mov     cx, 20
         rep     movsd
+        jmp     short .n%[p]
+.w%[p]:  mov     cx, 80
+        rep     movsb
+.n%[p]:  add     bx, 2
+        cmp     bx, CH_LINES*2
+        jb      short .r%[p]
 %assign p p+1
 %endrep
         mov     al, [0FFFFh]            ; reload the foreground's latches
@@ -447,8 +483,7 @@ work:   smsw    ax
         pop     cx
         add     eax, [pitch]
         loop    .rep
-.next:  add     word [srcoff], 80
-        inc     bp
+.next:  inc     bp
         cmp     bp, [vlines]
         jb      near .line
         mov     byte [force], 0
@@ -735,6 +770,9 @@ hwchk:  mov     dx, 3CCh                ; misc output: colour (3Dx) addressing?
         RDREG   12h, c12
         RDREG   07h, c07
         RDREG   13h, c13
+        RDREG   14h, c14
+        RDREG   17h, c17
+        RDREG   18h, c18
         RDREG   0Ch, c0c
         RDREG   0Dh, c0d
         RDREG   09h, c09
@@ -801,8 +839,26 @@ hwchk:  mov     dx, 3CCh                ; misc output: colour (3Dx) addressing?
         jne     near .bad
         cmp     bx, 350
         jb      near .bad
-        cmp     byte [c13], 28h         ; 80 bytes per line
+        cmp     byte [c13], 28h         ; 80..256 bytes per line (DOS/V with hardware scroll: 128)
+        jb      near .bad
+        cmp     byte [c13], 80h
+        ja      near .bad
+        test    byte [c14], 40h         ; byte addressing only (no doubleword mode)
         jne     near .bad
+        test    byte [c17], 40h         ; (no word mode)
+        je      near .bad
+        movzx   ax, byte [c13]
+        shl     ax, 1
+        mov     [gstride], ax
+        xor     ax, ax                  ; line compare: bits 0-7 in 18h, bit 8 in 07h.4, bit 9 in 09h.6
+        mov     al, [c18]
+        test    byte [c07], 10h
+        jz      short .lc8
+        or      ah, 1
+.lc8:   test    byte [c09], 40h
+        jz      short .lc9
+        or      ah, 2
+.lc9:   mov     [lcmp], ax
         test    byte [c09], 9Fh         ; no double scan, 1 scan line per row (rejects 640x200 modes)
         jne     near .bad
         mov     al, 1
@@ -931,7 +987,30 @@ unreal: cli
 ;--------------------------------------------------------------------------------------------------
 ; mvline: copy linebuf (640*scale dwords) to physical address EAX.  Preserves EAX.
 ;--------------------------------------------------------------------------------------------------
-mv87:   mov     [g87 + 1Ah], ax         ; V86: INT 15h AH=87h, destination descriptor base
+mv87:   ; V86: INT 15h AH=87h.  The descriptor table is rebuilt for every call: the BIOS / memory
+        ; manager fills in the GDT, CS and SS entries, and values left there by Windows 3.x (which
+        ; serves INT 15h AH=87h while it runs) made the next call after Windows had exited
+        ; triple-fault the VM.  ES = CS.
+        push    di
+        push    cx
+        push    eax
+        mov     di, g87
+        xor     eax, eax
+        mov     cx, 12
+        rep     stosd
+        mov     word [g87 + 10h], 0FFFFh        ; source: limit, base = linebuf, data r/w
+        mov     word [g87 + 18h], 0FFFFh        ; destination: limit, base = EAX, data r/w
+        mov     byte [g87 + 15h], 93h
+        mov     byte [g87 + 1Dh], 93h
+        mov     eax, [srclin]
+        mov     [g87 + 12h], ax
+        shr     eax, 16
+        mov     [g87 + 14h], al
+        mov     [g87 + 17h], ah
+        pop     eax
+        pop     cx
+        pop     di
+        mov     [g87 + 1Ah], ax
         push    eax
         shr     eax, 16
         mov     [g87 + 1Ch], al
@@ -997,6 +1076,7 @@ gdt:    dq      0
         times 16 db 0
 %endmacro
 g87:    GDT87
+srclin  dd      0                       ; linear address of linebuf (INT 15h/87h source)
 v86     db      0
 gdtr    dw      15
         dd      0
@@ -1014,8 +1094,11 @@ vlines  dw      0
 curv    dw      0
 iobase  dw      0
 crtstart dw     0
-srcoff  dw      0
+gstride dw      80                      ; graphics: bytes per line in VGA memory
+lcmp    dw      3FFh                    ; graphics: CRTC line compare
+laddr   times CH_LINES dw 0
 busy    db      0
+winpause db     0                       ; set while Windows switches modes (INT 2Fh 1605h..1608h, 1609h..1606h)
 pend    db      0                       ; a pass was skipped because INT 10h was running
 callfl  dw      0                       ; caller's flags for the BIOS call (INT 10h hook)
 in10    db      0
@@ -1076,6 +1159,9 @@ c01     db      0
 c12     db      0
 c07     db      0
 c13     db      0
+c14     db      0
+c17     db      0
+c18     db      0
 c0c     db      0
 c0d     db      0
 c09     db      0
@@ -1208,6 +1294,7 @@ init:   cld
         cmp     eax, ebx
         jb      near e_size
         LINADDR linebuf                 ; INT 15h/87h source descriptor = linebuf
+        mov     [srclin], eax
         mov     [g87 + 12h], ax
         shr     eax, 16
         mov     [g87 + 14h], al

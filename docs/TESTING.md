@@ -36,6 +36,8 @@ are run after `CHEV US`.
 | 19 | Speed of endless output: 30 × `DIR C:\DOS /W` takes 20.8 s with SVGA2X (about 17.4 s without), and the 2x picture is updated throughout | – | – | OK (0.3.1) |
 | 20 | 20 rounds of `/U`, `CHEV US`, install, `/U`, `/S3`, `CHEV JP`, `/U`, install (output redirected to NUL): ends in DOS/V 2x, resident size and total free memory unchanged, pipes still work | – | – | OK (0.3.1) |
 | 21 | `.vmx` with `svga.maxWidth = "640"`, `svga.maxHeight = "480"`: without `svga.autodetect = "FALSE"` VMware ignores them (log: max 2360x1773) and SVGA2X works; with it, `SVGA2X` and `SVGA2X /S3` refuse with the message and stay out of memory | – | – | OK (0.3.1) |
+| 22 | Win3.1 VM (MS-DOS 6.2/V + Windows 3.1J, MS EMM386, JDISP.SYS **with** hardware scroll: CRTC 13h = 40h, line compare 453): 2x after the stride / line-compare support; 2x capture vs 1x capture after `/U` (shifted by the two rows printed in between): 0 differing pixels of 255,360 | – | OK | – |
+| 23 | Windows 3.1 enhanced mode started and exited 3 times with SVGA2X resident: no crash, Windows at its normal 640x480, DOS at 1x afterwards, `/U` still works | – | OK | – |
 
 Bugs found and fixed by these tests:
 
@@ -51,6 +53,14 @@ Bugs found and fixed by these tests:
 - (test 20) After repeated `SVGA2X > NUL`, pipes failed ("Cannot execute FIND.EXE"): the resident
   part kept its standard handles open, leaking one DOS file table entry per install. Fixed in
   0.3.1 (handles closed before going resident).
+- (test 22) DOS/V with hardware scrolling (JDISP.SYS without `/HS=OFF`) was never doubled: only a
+  line stride of 80 bytes was accepted. Fixed in 0.3.1.
+- (test 23) With MS EMM386, after Windows 3.1 had been started and exited, the next INT 15h AH=87h
+  copy above the first 4 MB of the framebuffer triple-faulted the VM (found with read-only and
+  step-by-step diagnostics: the setup, a one-line copy at line 0 or 818 and reads were fine, a
+  copy at line 820 crashed). Doubling Windows' own screen worked, and pausing during Windows was
+  not enough (the second start/exit still crashed). SVGA2X now steps aside for good when Windows
+  starts.
 
 ## Host CPU (VM process, one core = 100 %, DOS prompt idle)
 
@@ -68,5 +78,5 @@ Full-screen scrolling (`dir`) under V86 managers: 54 % (EMM386) / 71 % (JemmEx) 
 ## Not tested yet
 
 - Runs longer than one hour; serial communication programs running at the same time
-- DOS extenders (DOS/4GW, DJGPP), Windows 3.1 enhanced mode
+- DOS extenders (DOS/4GW, DJGPP); Windows 3.1 with JemmEx; the 4 MB crash with JemmEx
 - VirtualBox VMSVGA, QEMU `-vga vmware`, other VMware versions
