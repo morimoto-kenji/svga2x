@@ -26,6 +26,7 @@ are run after `CHEV US`.
 | 10 | `/S3` (1920x1425): `LATCH.BAS` identical, every 3x3 block uniform; MJL and return to 3x | OK | – | OK |
 | 11 | `/S1`, `/S4` rejected; 2x regression (`LATCH.BAS`, `COLORS.BAS`) after the `/S` change | OK | – | OK |
 | 12 | Host display: full screen on a 1920x1080 host shows the 1280x950 image 1:1 and centred (all 1,216,000 pixels identical to the guest framebuffer); window without stretch: pure colours, bottom cut off (~930 lines available); window with "Stretch guest": fits, but ~3 % of the pixels are interpolated greys | OK | – | – |
+| 12b | Host display, text mode: full screen on a 1920x1080 host shows the 1440x800 text picture 1:1 and centred at (240,140) (all 1,152,000 pixels identical to the guest framebuffer) | – | – | OK |
 | 13 | Text mode 80x25 (QBASIC IDE: colours, line drawing, 9th column, scroll bars) at 2x: identical to the 720x400 picture without SVGA2X except the blinking cursor (which alternates 0 / 18 differing pixels as it blinks) | OK | – | OK |
 | 14 | `MODE CON LINES=50` (8x8 font), `LINES=43` (350 lines, 8-dot cells), `MODE CO80` after it (350-line 80x25), `LINES=25`: identical except the cursor; `MODE CO40` left alone | OK | – | – |
 | 15 | Text at 3x (2160x1200) identical except the cursor; `CHEV JP`/`CHEV US` switching between DOS/V 3x and text 3x | OK | – | – |
