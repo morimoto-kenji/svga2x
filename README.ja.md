@@ -61,8 +61,8 @@ nasm -f bin -o SVGA2X.COM src/svga2x.asm
 | 同、MS EMM386 4.95 | OK（INT 15h AH=87h 経由） |
 | 同、JemmEx 5.86（`I=TEST SPLIT NOINVLPG`） | OK（INT 15h AH=87h 経由） |
 
-アイドル時の VM のホスト CPU 使用率（1コア=100%）: SVGA2X なし 3.4%、あり 約8〜11%。
-詳細と測定値は [docs/TECHNICAL.md](docs/TECHNICAL.md) を参照してください。
+アイドル時の VM のホスト CPU 使用率（1コア=100%）: SVGA2X なし 3.4%、あり 約8〜11%（`/R2` なら 5〜6%）。
+テストの記録は [docs/TESTING.md](docs/TESTING.md)、仕組みは [docs/TECHNICAL.md](docs/TECHNICAL.md) を参照してください。
 
 ## 制限・既知の問題
 

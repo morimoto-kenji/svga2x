@@ -47,6 +47,7 @@ Every pass reads (with interrupts disabled, indices saved/restored):
 | CRTC 01h | 4Fh (640 pixels) |
 | CRTC 12h + overflow (07h bits 1,6) | visible lines 350..480 |
 | CRTC 13h | 28h (80 bytes per line) |
+| CRTC 09h & 9Fh | 0 (no double scan, one scan line per row) |
 | CRTC 0Ch/0Dh | start address (added to the source offset) |
 
 If the check fails, SVGA is disabled so the normal VGA picture (text mode etc.) is shown.
@@ -83,9 +84,14 @@ dominates the cost under VMware: per-line register handling cost 19.4 % host CPU
 
 - **INT 08h**: chains to the old handler first (so the EOI is sent), then works with interrupts
   enabled. Skipped while INT 10h is running or a pass is still active.
-- **INT 10h**: before AH=00h (set mode) or AX=4F02h (VBE set mode), SVGA is disabled. After a
-  VBE mode >= 100h SVGA2X stays suspended until the next set-mode. After AH=00h / AH=10h the
-  palette is re-read (via the old INT 10h vector).
+- **INT 10h**: after AH=00h (set mode) SVGA is disabled (doing it *before* the BIOS mode set made
+  VMware show 640x200 double-scan modes as garbage). For AX=4F02h (VBE set mode) SVGA2X only
+  forgets that it owns the SVGA and lets the VBE BIOS take it over (writing ENABLE=0 first made the
+  VBE BIOS fail). After a VBE mode >= 100h SVGA2X stays suspended until the next set-mode. After
+  AH=00h / AH=10h the palette is re-read (via the old INT 10h vector).
+  The caller's AX/BX are kept on the stack because INT 10h is re-entered (DOS/V's JDISP calls
+  INT 10h while handling a mode set), and the BIOS result flags are returned with the caller's
+  IF/TF (the BIOS is called with IF=0).
 - **INT 2Fh** AX=E700h: install check (AL=FFh, BX='2X', ES=resident segment).
 
 ## Measurements (VMware Workstation 26.0.1, host CPU of the VM process, one core = 100 %)
@@ -97,6 +103,8 @@ dominates the cost under VMware: per-line register handling cost 19.4 % host CPU
 | real mode, 8-line chunks | 8.9 % | – |
 | MS EMM386 4.95 (INT 15h/87h) | 10.6 % | 54 % |
 | JemmEx 5.86 (INT 15h/87h) | 8.1 % | 71 % |
+| MS EMM386 4.95, `/R2` | 6.2 % | – |
+| JemmEx 5.86, `/R2` | 4.7 % | – |
 
 ## Ideas for the future
 

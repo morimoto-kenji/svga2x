@@ -61,8 +61,8 @@ or run `build.bat` (Windows) / `make`.
 | same, MS EMM386 4.95 | OK (via INT 15h AH=87h) |
 | same, JemmEx 5.86 (`I=TEST SPLIT NOINVLPG`) | OK (via INT 15h AH=87h) |
 
-Host CPU use of the idle VM (one core = 100 %): 3.4 % without SVGA2X, about 8–11 % with it.
-See [docs/TECHNICAL.md](docs/TECHNICAL.md) for details and measurements.
+Host CPU use of the idle VM (one core = 100 %): 3.4 % without SVGA2X, about 8–11 % with it (5–6 % with `/R2`).
+See [docs/TESTING.md](docs/TESTING.md) for the full test record and [docs/TECHNICAL.md](docs/TECHNICAL.md) for how it works.
 
 ## Limitations / known issues
 
