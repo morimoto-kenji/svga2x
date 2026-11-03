@@ -77,7 +77,7 @@ MUX_SIG   equ   5832h                   ; '2X'
 ; Resident part
 ;==================================================================================================
 entry:  jmp     near init
-signature db    'SVGA2X03'
+signature db    'SVGA2X31'
 
 ;--------------------------------------------------------------------------------------------------
 ; INT 08h: chain first (EOI is sent by the BIOS), then do the work with interrupts enabled.
@@ -86,14 +86,17 @@ int08:  pushf
         call    far [cs:old08]
         cmp     byte [cs:busy], 0
         jne     near .ret
-        cmp     byte [cs:in10], 0       ; never touch the hardware while INT 10h is running
-        jne     near .ret
         dec     byte [cs:cnt]
         jne     near .ret
         push    ax
         mov     al, [cs:rate]
         mov     [cs:cnt], al
         pop     ax
+        cmp     byte [cs:in10], 0       ; never touch the hardware while INT 10h is running.  Leave
+        je      short .run              ; the pass to the end of that INT 10h instead: text output
+        mov     byte [cs:pend], 1       ; that never stops (DIR in a loop) is inside INT 10h at
+        jmp     near .ret               ; almost every tick, and the display would starve.
+.run:   mov     byte [cs:pend], 0
         mov     byte [cs:busy], 1
         sti
         pushad
@@ -144,7 +147,21 @@ int10:  inc     byte [cs:in10]
         cmp     ax, 4F02h               ; VBE set mode: let the VBE BIOS take the SVGA over as it is.
         jne     near .go                ; (Writing ENABLE=0 first made VMware's VBE BIOS fail: black
         mov     byte [cs:enabled], 0    ; screen.)  Just forget that we own it.
-.go:    pushf
+.go:    ; Call the BIOS with the caller's flags (IF/TF cleared, as INT does), not with whatever our own
+        ; CMPs left: a BIOS function that returns with IRET and does not touch CF hands those flags
+        ; back, and QBASIC's PALETTE (no arguments) failed with "Illegal function call" when it got
+        ; CF=1 from the compare above.
+        push    bp
+        mov     bp, sp                  ; [bp+2] AX, [bp+4] BX, [bp+6] IP, [bp+8] CS, [bp+10] flags
+        push    ax
+        mov     ax, [bp + 10]
+        and     ax, 0FCFFh
+        mov     [cs:callfl], ax
+        pop     ax
+        pop     bp
+        push    word [cs:callfl]
+        popf
+        push    word [cs:callfl]
         call    far [cs:old10]
         pushf                           ; keep the flags returned by the BIOS
         pushad
@@ -187,7 +204,42 @@ int10:  inc     byte [cs:in10]
 .done:  pop     es
         pop     ds
         popad
+        ; A tick was skipped while INT 10h was running: do that pass now, on the way out of the
+        ; outermost INT 10h (the BIOS / DOS/V driver has finished with the hardware), but only if
+        ; the caller had interrupts enabled.
+        cmp     byte [cs:pend], 0
+        je      short .nopend
+        cmp     byte [cs:in10], 1
+        jne     short .nopend
+        cmp     byte [cs:busy], 0
+        jne     short .nopend
+        push    bp
+        mov     bp, sp                  ; [bp+8] IP, [bp+10] CS, [bp+12] caller flags
+        test    byte [bp + 13], 02h     ; caller IF
+        pop     bp
+        jz      short .nopend
+        mov     byte [cs:pend], 0
+        mov     byte [cs:busy], 1
+        mov     byte [cs:in10], 0
+        sti
+        pushad
+        push    ds
+        push    es
+        push    cs
+        pop     ds
+        push    cs
+        pop     es
+        cld
+        call    work
+        pop     es
+        pop     ds
+        popad
+        cli
+        mov     byte [cs:busy], 0
+        jmp     short .flags
+.nopend:
         dec     byte [cs:in10]
+.flags:
         ; Return the BIOS result flags (CF, ZF, ...) but the caller's IF/TF: the BIOS was called
         ; with IF=0 (we are inside an INT), so passing its flags straight back would leave the
         ; caller running with interrupts disabled.
@@ -964,6 +1016,8 @@ iobase  dw      0
 crtstart dw     0
 srcoff  dw      0
 busy    db      0
+pend    db      0                       ; a pass was skipped because INT 10h was running
+callfl  dw      0                       ; caller's flags for the BIOS call (INT 10h hook)
 in10    db      0
 cnt     db      0
 rate    db      0
@@ -1334,8 +1388,8 @@ tbP     db      'SVGA2X INT15/87 write test 1234', 0
 rseg    dw      0
 f_u     db      0
 
-m_title   db 'SVGA2X 0.3.0 - VGA 16-colour graphics and 80-column text at 2x/3x on VMware SVGA II', 13, 10, '$'
-m_inst    db 'Installed.  SVGA2X /U = remove, /Rn = update every n ticks (1-9)', 13, 10, '$'
+m_title   db 'SVGA2X 0.3.1 - VGA 16-colour graphics and 80-column text at 2x/3x on VMware SVGA II', 13, 10, '$'
+m_inst    db 'Installed.  SVGA2X /U = remove, /? = help', 13, 10, '$'
 m_help    db 'Usage: SVGA2X [/Sn] [/Rn] | /U', 13, 10
           db '  (none)  install resident', 13, 10
           db '  /Sn     scale factor, n = 2 (default, 1280x960) or 3 (1920x1440)', 13, 10

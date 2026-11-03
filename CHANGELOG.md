@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.1 (unreleased)
+
+- Fix: during endless text output (e.g. `DIR` in a batch loop) the 2x picture froze for tens of
+  seconds, because almost every timer tick arrived while INT 10h was running and the pass was
+  skipped. A skipped pass is now done at the end of the INT 10h call.
+- Fix: INT 10h calls returned CF=1 (and other flags) left over from SVGA2X's own compare instead of
+  the caller's flags, whenever the BIOS function returns with IRET. QBASIC `PALETTE` without
+  arguments failed with "Illegal function call". The BIOS is now called with the caller's flags.
+- The install message points to `/?` instead of listing only `/R`.
+
 ## 0.3.0 (unreleased)
 
 - 80-column VGA text modes are doubled/tripled too (80x25 → 1440x800 / 2160x1200, 80x43, 80x50,

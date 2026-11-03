@@ -102,12 +102,19 @@ dominates the cost under VMware: per-line register handling cost 19.4 % host CPU
 ## Interrupt hooks
 
 - **INT 08h**: chains to the old handler first (so the EOI is sent), then works with interrupts
-  enabled. Skipped while INT 10h is running or a pass is still active.
+  enabled. Skipped while a pass is still active. If INT 10h is running when a pass is due, the pass
+  is left to the end of that INT 10h instead: the INT 10h hook runs it on the way out of the
+  outermost call (when the caller had interrupts enabled). Without this, endless text output such
+  as `DIR` in a loop is inside INT 10h at almost every tick and the 2x picture froze for tens of
+  seconds at a time (found by the long-running test, fixed in 0.3.1).
 - **INT 10h**: after AH=00h (set mode) SVGA is disabled (doing it *before* the BIOS mode set made
   VMware show 640x200 double-scan modes as garbage). For AX=4F02h (VBE set mode) SVGA2X only
   forgets that it owns the SVGA and lets the VBE BIOS take it over (writing ENABLE=0 first made the
   VBE BIOS fail). After a VBE mode >= 100h SVGA2X stays suspended until the next set-mode. After
-  AH=00h / AH=10h the palette is re-read (via the old INT 10h vector).
+  AH=00h / AH=10h the palette is re-read (via the old INT 10h vector). The old handler is called
+  with the caller's flags (IF/TF cleared): most BIOS functions return with IRET, so the flags the
+  caller gets back are the ones pushed for the call. (0.3.0 and earlier pushed the flags left by
+  its own CMP, so callers got CF=1 back and QBASIC's `PALETTE` without arguments failed.)
   The caller's AX/BX are kept on the stack because INT 10h is re-entered (DOS/V's JDISP calls
   INT 10h while handling a mode set), and the BIOS result flags are returned with the caller's
   IF/TF (the BIOS is called with IF=0).

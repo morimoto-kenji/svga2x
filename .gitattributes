@@ -2,3 +2,5 @@
 *.bat text eol=crlf
 *.BAS text eol=crlf
 *.COM binary
+*.BAT text eol=crlf
+*.png binary

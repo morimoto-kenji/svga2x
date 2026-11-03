@@ -31,6 +31,9 @@ are run after `CHEV US`.
 | 14 | `MODE CON LINES=50` (8x8 font), `LINES=43` (350 lines, 8-dot cells), `MODE CO80` after it (350-line 80x25), `LINES=25`: identical except the cursor; `MODE CO40` left alone | OK | – | – |
 | 15 | Text at 3x (2160x1200) identical except the cursor; `CHEV JP`/`CHEV US` switching between DOS/V 3x and text 3x | OK | – | – |
 | 16 | Regression after adding text mode: LATCH, COLORS, MODES, S8B, MJL | OK | – | OK (LATCH) |
+| 17 | Long run, 60 min: `SCROLL.BAT` (endless `DIR` in DOS/V) with a capture every 30 s (118 captures): every 2x2 block uniform, picture keeps changing, DOS clock within 1 s of the host, no memory loss | – | – | OK (0.3.1) |
+| 18 | Long run, 60 min: `STRESS.BAS` (SCREEN 12 drawing, `PALETTE` changes and reset, coloured text output, SCREEN 9, 80x50 text, in a loop; 116 captures): every block uniform, no errors, clock within 1 s | – | – | OK (0.3.1) |
+| 19 | Speed of endless output: 30 × `DIR C:\DOS /W` takes 20.8 s with SVGA2X (about 17.4 s without), and the 2x picture is updated throughout | – | – | OK (0.3.1) |
 
 Bugs found and fixed by these tests:
 
@@ -38,6 +41,11 @@ Bugs found and fixed by these tests:
 - SCREEN 8 garbage after leaving a 2x mode (SVGA was turned off before the BIOS mode set).
 - VESA programs got a black screen (SVGA was turned off before the VBE mode set).
 - 2x not restored after a VESA program under DOS/V (non-re-entrant INT 10h hook).
+- (test 17) Endless text output froze the 2x picture for tens of seconds under JemmEx: almost every
+  timer tick arrived while INT 10h was running, and the pass was skipped. Fixed in 0.3.1 (the pass
+  is done at the end of that INT 10h).
+- (test 18) QBASIC `PALETTE` without arguments failed with "Illegal function call": the INT 10h hook
+  called the BIOS with its own flags, so callers got CF=1 back. Fixed in 0.3.1.
 
 ## Host CPU (VM process, one core = 100 %, DOS prompt idle)
 
@@ -55,6 +63,6 @@ Full-screen scrolling (`dir`) under V86 managers: 54 % (EMM386) / 71 % (JemmEx) 
 ## Not tested yet
 
 - The refusal message when the `.vmx` limits the resolution (`svga.maxWidth` etc.)
-- Long-running stability (hours), serial communication programs running at the same time
+- Runs longer than one hour; serial communication programs running at the same time
 - DOS extenders (DOS/4GW, DJGPP), Windows 3.1 enhanced mode
 - VirtualBox VMSVGA, QEMU `-vga vmware`, other VMware versions
