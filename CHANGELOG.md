@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 (unreleased)
+
+- 80-column VGA text modes are doubled/tripled too (80x25 → 1440x800 / 2160x1200, 80x43, 80x50,
+  350-line 80x25): re-drawn from the text buffer with the font read from VGA plane 2, 8/9-dot cells,
+  line-drawing characters, blinking cursor, blink/intensity attribute.
+- The font is re-read after INT 10h AH=00h / AH=11h.  Resident part about 20 KB.
+
 ## 0.2.0 (unreleased)
 
 - `/S2` (default) and `/S3` scale factor; 3x = 1920x1440 (1920x1425 for DOS/V's 475 lines).

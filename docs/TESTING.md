@@ -26,6 +26,10 @@ are run after `CHEV US`.
 | 10 | `/S3` (1920x1425): `LATCH.BAS` identical, every 3x3 block uniform; MJL and return to 3x | OK | – | OK |
 | 11 | `/S1`, `/S4` rejected; 2x regression (`LATCH.BAS`, `COLORS.BAS`) after the `/S` change | OK | – | OK |
 | 12 | Host display: full screen on a 1920x1080 host shows the 1280x950 image 1:1 and centred (all 1,216,000 pixels identical to the guest framebuffer); window without stretch: pure colours, bottom cut off (~930 lines available); window with "Stretch guest": fits, but ~3 % of the pixels are interpolated greys | OK | – | – |
+| 13 | Text mode 80x25 (QBASIC IDE: colours, line drawing, 9th column, scroll bars) at 2x: identical to the 720x400 picture without SVGA2X except the blinking cursor (which alternates 0 / 18 differing pixels as it blinks) | OK | – | OK |
+| 14 | `MODE CON LINES=50` (8x8 font), `LINES=43` (350 lines, 8-dot cells), `MODE CO80` after it (350-line 80x25), `LINES=25`: identical except the cursor; `MODE CO40` left alone | OK | – | – |
+| 15 | Text at 3x (2160x1200) identical except the cursor; `CHEV JP`/`CHEV US` switching between DOS/V 3x and text 3x | OK | – | – |
+| 16 | Regression after adding text mode: LATCH, COLORS, MODES, S8B, MJL | OK | – | OK (LATCH) |
 
 Bugs found and fixed by these tests:
 
@@ -43,6 +47,7 @@ Bugs found and fixed by these tests:
 | JemmEx | – | 8.1 % | 4.7 % |
 | Real mode, `/S3` | – | 8.3 % | – |
 | JemmEx, `/S3` | – | 7.5 % | – |
+| JemmEx, text mode (80x25) | – | 2.3 % | – |
 
 Full-screen scrolling (`dir`) under V86 managers: 54 % (EMM386) / 71 % (JemmEx) at 2x, 61 % (JemmEx) at 3x.
 

@@ -11,18 +11,22 @@ window is two or three times the size and pixel-sharp. Because it lives in the g
 
 It was written for Japanese DOS/V (whose text console is drawn in VGA graphics mode by
 `JDISP.SYS`), but it works with anything that uses a 640-pixel-wide 16-colour planar VGA mode
-(mode 12h and variants with 350–480 lines).
+(mode 12h and variants with 350–480 lines), and also with ordinary 80-column VGA **text modes**
+(80x25 = 720x400 becomes 1440x800 or 2160x1200; 80x43, 80x50 etc. work too).
 
 ## Features
 
 - Exact nearest-neighbour 2x (1280x960) or 3x (1920x1440) scaling, 32-bit colour (palette read
   from the VGA DAC)
 - Follows the number of visible lines (e.g. DOS/V's 475 lines → 1280x950, 480 lines → 1280x960)
-- Steps aside automatically for text modes, other graphics modes and VESA (VBE) modes, and comes
-  back when the 640-wide planar mode returns
+- 80-column text modes are re-drawn with the font currently loaded in the VGA (8- or 9-dot cells,
+  line-drawing characters, blinking cursor, colours), so English DOS and text-mode programs are
+  doubled as well
+- Steps aside automatically for other modes (40-column text, 320x200, 640x200, 256 colours) and
+  VESA (VBE) modes, and comes back when a supported mode returns
 - Only changed lines are redrawn
 - Works in real mode (HIMEM only) **and** under V86 memory managers (MS EMM386, JemmEx)
-- About 14 KB resident; can be removed with `/U`
+- About 20 KB resident; can be removed with `/U`
 
 ## Requirements
 
@@ -93,6 +97,9 @@ See [docs/TESTING.md](docs/TESTING.md) for the full test record and [docs/TECHNI
   line). A JemmEx JLM back-end is a possible future improvement.
 - Programs that program the DAC directly through ports (not via INT 10h) may show wrong colours
   until the next mode set.
+- Text modes: blinking characters are shown without blinking; 512-character fonts use font map A
+  only; a font loaded directly through the VGA ports (not via INT 10h AH=11h) is picked up at the
+  next mode set; 40-column modes are not doubled.
 - Windows 3.x enhanced mode / DOS boxes: SVGA2X pauses itself when the CPU is in protected mode
   and it was installed in real mode.
 

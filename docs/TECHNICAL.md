@@ -52,6 +52,25 @@ Every pass reads (with interrupts disabled, indices saved/restored):
 
 If the check fails, SVGA is disabled so the normal VGA picture (text mode etc.) is shown.
 
+## Text modes
+
+80-column colour text modes (GC 6 = alphanumeric at B800h, CRTC 01h = 4Fh, no half dot clock,
+no double scan, cells 8..16 lines high) are re-drawn by SVGA2X itself:
+
+- Characters/attributes are read from B800h (start address CRTC 0Ch/0Dh, row stride = CRTC 13h * 4).
+- The font is copied from VGA plane 2 into a 4 KB cache (256 characters x 16 lines), using the same
+  register setup as the BIOS (sequencer 2/4, GC 4/5/6), with interrupts off and every register
+  restored.  Font map A is taken from sequencer register 3.  The cache is refreshed on entering a
+  text mode and after INT 10h AH=00h / AH=11h.
+- Cell width 8 or 9 (sequencer 1 bit 0).  In 9-dot mode the 9th column repeats column 8 for
+  C0h..DFh (line-drawing characters), otherwise it is background (VGA line graphics enabled, the
+  BIOS default).
+- Background uses 8 colours when blinking is enabled (BIOS mode-select shadow 40:65h bit 5).
+  Blinking characters are drawn without blinking.
+- Cursor: CRTC 0Ah/0Bh (shape, bit 5 = off) and 0Eh/0Fh (position), blinking with bit 3 of the
+  BIOS tick counter.
+- Change detection is per text row (hash of the 160 bytes plus cursor state).
+
 ## Reading VGA memory safely from an interrupt
 
 The resident part interrupts arbitrary foreground code, possibly in the middle of a VGA drawing
@@ -110,5 +129,4 @@ dominates the cost under VMware: per-line register handling cost 19.4 % host CPU
 
 - JemmEx JLM back-end: map the FB into Jemm's linear address space (`_PageReserve`,
   `_PageCommitPhys`) and copy from ring 0 — removes the per-line INT 15h cost.
-- Text mode support (render the 720x400 text screen with the VGA font).
 - VCPI back-end for other memory managers.

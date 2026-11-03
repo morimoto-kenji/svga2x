@@ -24,7 +24,7 @@
 
 CH_LINES  equ   8                       ; lines read from VGA per chunk
 CHUNKSZ   equ   CH_LINES*80             ; bytes per plane per chunk
-MAXLINES  equ   480
+MAXLINES  equ   480                     ; also the max number of hash entries (lines or text rows)
 MAXSCALE  equ   3
 
 ; VMware SVGA II registers (index/value port pair at BAR0)
@@ -77,7 +77,7 @@ MUX_SIG   equ   5832h                   ; '2X'
 ; Resident part
 ;==================================================================================================
 entry:  jmp     near init
-signature db    'SVGA2X02'
+signature db    'SVGA2X03'
 
 ;--------------------------------------------------------------------------------------------------
 ; INT 08h: chain first (EOI is sent by the BIOS), then do the work with interrupts enabled.
@@ -161,7 +161,11 @@ int10:  inc     byte [cs:in10]
         je      near .mode
         cmp     ax, 4F02h
         je      near .vbe
-        cmp     ah, 10h                 ; palette functions
+        cmp     ah, 11h                 ; character generator functions: re-read the font
+        jne     short .nf
+        mov     byte [fontdirty], 1
+        jmp     near .done
+.nf:    cmp     ah, 10h                 ; palette functions
         jne     near .done
         call    getpal
         jmp     near .done
@@ -170,6 +174,7 @@ int10:  inc     byte [cs:in10]
         call    disable                  ; QBASIC SCREEN 8) as garbage.
 .mode2: mov     byte [susp], 0
         mov     byte [force], 1
+        mov     byte [fontdirty], 1
         call    getpal
         jmp     near .done
 .vbe:   mov     byte [force], 1
@@ -217,21 +222,35 @@ work:   smsw    ax
         jz      short .rm               ; protected/V86 mode now:
         cmp     byte [v86], 0           ;   OK only if we were installed under a V86 monitor
         je      near .ret
-.rm:    call    hwchk
+.rm:    call    hwchk                   ; AL = 0 (other mode), 1 (640x480 planar), 2 (80-col text)
         test    al, al
         jne     near .ok
-        cmp     byte [enabled], 0       ; not a 640-wide planar mode: show plain VGA
+        cmp     byte [enabled], 0       ; unsupported mode: show plain VGA
         je      near .ret
         call    disable
         jmp     near .ret
 .ok:    cmp     byte [susp], 0
         jne     near .ret
-        cmp     byte [enabled], 0
+        mov     [newmode], al
+        mov     word [modew], 640       ; source width: 640 (graphics) or 80 * 8/9 (text)
+        cmp     al, 1
+        je      short .w
+        movzx   ax, byte [tcw]
+        imul    ax, ax, 80
+        mov     [modew], ax
+.w:     cmp     byte [enabled], 0
         je      near .doen
+        mov     al, [newmode]
+        cmp     al, [curmode]
+        jne     near .doen
         mov     ax, [vlines]
-        cmp     ax, [curv]              ; number of lines changed -> set the mode again
+        cmp     ax, [curv]
+        jne     near .doen
+        mov     ax, [modew]
+        cmp     ax, [curw]
         je      near .en
-.doen:  call    enable
+.doen:  call    enable                  ; (re)program the SVGA; CF = VM cannot show this size
+        jc      near .ret
 .en:    cmp     byte [paldirty], 0
         je      near .np
         mov     byte [force], 1
@@ -239,7 +258,9 @@ work:   smsw    ax
 .np:    cmp     byte [v86], 0
         jne     near .nour
         call    unreal
-.nour:  mov     ax, [crtstart]
+.nour:  cmp     byte [curmode], 2
+        je      near textpass
+        mov     ax, [crtstart]
         mov     [srcoff], ax
         xor     bp, bp                  ; BP = line
 
@@ -382,14 +403,272 @@ work:   smsw    ax
 .ret:   ret
 
 ;--------------------------------------------------------------------------------------------------
-; hwchk: AL=1 if the VGA is in a colour, 640-wide, 16-colour planar graphics mode with 350..480
-;        visible lines.  Sets [vlines] and [crtstart] (CRTC start address).
+; textpass: render an 80-column text screen.  Rows whose characters/attributes (and cursor) did
+; not change since the last pass are skipped.
+;--------------------------------------------------------------------------------------------------
+textpass:
+        cmp     byte [fontdirty], 0
+        je      short .fok
+        call    readfont
+        mov     byte [fontdirty], 0
+        mov     byte [force], 1
+.fok:   push    ds                      ; BIOS data: tick count (cursor blink), mode-select shadow
+        xor     ax, ax
+        mov     ds, ax
+        mov     al, [46Ch]
+        mov     ah, [465h]
+        pop     ds
+        mov     byte [bgmask], 0Fh      ; 3x8 mode-select bit 5 = blink enabled -> 8 background colours
+        test    ah, 20h
+        jz      short .nobl
+        mov     byte [bgmask], 07h
+.nobl:  mov     word [currow], 0FFFFh   ; cursor position (row/col on screen), or none
+        test    byte [c0a], 20h         ; cursor disabled
+        jne     short .nocur
+        test    al, 08h                 ; blink: visible half of the time
+        jz      short .nocur
+        mov     ah, [c0e]
+        mov     al, [c0f]
+        sub     ax, [crtstart]
+        jb      short .nocur
+        mov     bx, [tstride]
+        shr     bx, 1                   ; characters per row in memory
+        xor     dx, dx
+        div     bx
+        cmp     dx, 80
+        jae     short .nocur
+        cmp     al, [trows]
+        jae     short .nocur
+        mov     [currow], ax
+        mov     [curcol], dx
+.nocur: mov     al, [c0a]
+        and     al, 1Fh
+        mov     [cstart], al
+        mov     al, [c0b]
+        and     al, 1Fh
+        mov     [cend], al
+        mov     word [trow], 0
+.row:   mov     ax, [trow]              ; copy this row (char, attr) x 80 from B800h
+        mul     word [tstride]
+        mov     si, [crtstart]
+        shl     si, 1
+        add     si, ax
+        mov     di, rowbuf
+        mov     cx, 80
+        push    ds
+        mov     ax, 0B800h
+        mov     ds, ax
+        rep     movsw
+        pop     ds
+        mov     si, rowbuf              ; hash it, plus cursor and blink state
+        mov     cx, 40
+        xor     edx, edx
+.h:     lodsd
+        rol     edx, 5
+        add     edx, eax
+        loop    .h
+        movzx   eax, byte [bgmask]
+        xor     edx, eax
+        mov     ax, [trow]
+        cmp     ax, [currow]
+        jne     short .hc
+        mov     ax, [curcol]
+        shl     eax, 16
+        mov     ah, [cstart]
+        mov     al, [cend]
+        add     eax, 5A5A0001h
+        xor     edx, eax
+.hc:    mov     di, [trow]
+        shl     di, 2
+        cmp     edx, [di + hashes]
+        jne     short .chg
+        cmp     byte [force], 0
+        je      near .nextrow
+.chg:   mov     [di + hashes], edx
+        mov     word [tline], 0
+.line:  mov     si, rowbuf
+        mov     di, linebuf
+        xor     bp, bp                  ; BP = column
+.col:   mov     al, [si]                ; character
+        mov     [tchar], al
+        movzx   ebx, byte [si + 1]      ; attribute
+        add     si, 2
+        mov     ecx, ebx
+        and     ebx, 0Fh
+        mov     edx, [ebx*4 + pal32]    ; EDX = foreground
+        shr     ecx, 4
+        and     cl, [bgmask]
+        mov     eax, [ecx*4 + pal32]
+        mov     [tbg], eax              ; background
+        movzx   bx, byte [tchar]        ; font row
+        shl     bx, 4
+        add     bx, [tline]
+        mov     bl, [bx + fontc]
+        mov     byte [tcur], 0
+        cmp     bp, [curcol]            ; cursor cell and scan line?
+        jne     short .nc
+        mov     ax, [trow]
+        cmp     ax, [currow]
+        jne     short .nc
+        mov     al, [tline]
+        cmp     al, [cstart]
+        jb      short .nc
+        cmp     al, [cend]
+        ja      short .nc
+        mov     bl, 0FFh
+        mov     byte [tcur], 1
+.nc:    mov     [tbits], bl
+        mov     bh, 8
+.px:    mov     eax, [tbg]
+        shl     bl, 1
+        jnc     short .bg
+        mov     eax, edx
+.bg:    movzx   cx, byte [scale]
+        rep     stosd
+        dec     bh
+        jnz     short .px
+        cmp     byte [tcw], 9           ; 9th column: background, or column 8 repeated for
+        jne     short .n9               ; line-drawing characters C0h..DFh (and the cursor)
+        mov     eax, [tbg]
+        cmp     byte [tcur], 0
+        jne     short .fg9
+        cmp     byte [tchar], 0C0h
+        jb      short .s9
+        cmp     byte [tchar], 0DFh
+        ja      short .s9
+        test    byte [tbits], 1
+        jz      short .s9
+.fg9:   mov     eax, edx
+.s9:    movzx   cx, byte [scale]
+        rep     stosd
+.n9:    inc     bp
+        cmp     bp, 80
+        jb      near .col
+        movzx   eax, word [trow]        ; FB address of output line ((row*tch)+line)*scale
+        movzx   ecx, byte [tch]
+        mul     ecx
+        add     ax, [tline]
+        movzx   ecx, byte [scale]
+        mul     ecx
+        mul     dword [pitch]
+        add     eax, [fbbase]
+        movzx   cx, byte [scale]
+.rep:   push    cx
+        call    mvline
+        pop     cx
+        add     eax, [pitch]
+        loop    .rep
+        inc     word [tline]
+        movzx   ax, byte [tch]
+        cmp     [tline], ax
+        jb      near .line
+.nextrow:
+        inc     word [trow]
+        movzx   ax, byte [trows]
+        cmp     [trow], ax
+        jb      near .row
+        mov     byte [force], 0
+        ret
+
+;--------------------------------------------------------------------------------------------------
+; readfont: copy the character generator (font map A, 256 x 16 lines) from VGA plane 2 into
+;           fontc[], the same way the BIOS accesses it.  All registers are saved and restored and
+;           interrupts are off, so the foreground never sees the changed state.
+;--------------------------------------------------------------------------------------------------
+readfont:
+        cli
+        mov     dx, 3C4h
+        in      al, dx
+        mov     [t_si], al
+        RDREG   2, f_s2
+        RDREG   3, f_s3
+        RDREG   4, f_s4
+        mov     ax, 0402h               ; map mask = plane 2
+        out     dx, ax
+        mov     ax, 0704h               ; sequential addressing, extended memory
+        out     dx, ax
+        mov     dx, 3CEh
+        in      al, dx
+        mov     [t_gi], al
+        RDREG   4, f_g4
+        RDREG   5, f_g5
+        RDREG   6, f_g6
+        mov     ax, 0204h               ; read map = plane 2
+        out     dx, ax
+        mov     ax, 0005h               ; read mode 0, no odd/even
+        out     dx, ax
+        mov     ax, 0406h               ; memory map A000h/64K, no chain
+        out     dx, ax
+        mov     al, [f_s3]              ; font map A = bits 5,3,2 of character map select
+        mov     bl, al
+        shr     bl, 3
+        and     bl, 4
+        shr     al, 2
+        and     al, 3
+        or      bl, al
+        xor     bh, bh
+        shl     bx, 1
+        mov     bx, [bx + fontblk]
+        push    ds
+        push    es
+        push    cs
+        pop     es
+        mov     ax, 0A000h
+        mov     ds, ax
+        mov     di, fontc
+        mov     cx, 256
+.ch:    mov     si, bx
+        movsd                           ; 16 lines of this character
+        movsd
+        movsd
+        movsd
+        add     bx, 32
+        loop    .ch
+        pop     es
+        pop     ds
+        mov     dx, 3CEh                ; restore
+        mov     ah, [f_g6]
+        mov     al, 6
+        out     dx, ax
+        mov     ah, [f_g5]
+        mov     al, 5
+        out     dx, ax
+        mov     ah, [f_g4]
+        mov     al, 4
+        out     dx, ax
+        mov     al, [t_gi]
+        out     dx, al
+        mov     dx, 3C4h
+        mov     ah, [f_s4]
+        mov     al, 4
+        out     dx, ax
+        mov     ah, [f_s2]
+        mov     al, 2
+        out     dx, ax
+        mov     al, [t_si]
+        out     dx, al
+        sti
+        ret
+fontblk dw      0000h, 4000h, 8000h, 0C000h, 2000h, 6000h, 0A000h, 0E000h
+
+;--------------------------------------------------------------------------------------------------
+; hwchk: classify the current VGA mode (colour adapters only)
+;   AL=1  16-colour planar graphics, 640 wide, 350..480 lines (sets vlines, crtstart)
+;   AL=2  text mode, 80 columns, 8/9-dot cells up to 16 lines high, 200..480 lines
+;         (sets vlines, crtstart, tcw, tch, trows, tstride, cursor registers)
+;   AL=0  anything else
 ;--------------------------------------------------------------------------------------------------
 hwchk:  mov     dx, 3CCh                ; misc output: colour (3Dx) addressing?
         in      al, dx
         test    al, 1
         je      near .bad
         cli
+        mov     dx, 3C4h
+        in      al, dx
+        mov     [t_si], al
+        RDREG   1, t_s1                 ; clocking mode: bit0 = 8-dot cells, bit3 = half dot clock
+        mov     al, [t_si]
+        out     dx, al
         mov     dx, 3CEh
         in      al, dx
         mov     [t_gi], al
@@ -407,16 +686,14 @@ hwchk:  mov     dx, 3CCh                ; misc output: colour (3Dx) addressing?
         RDREG   0Ch, c0c
         RDREG   0Dh, c0d
         RDREG   09h, c09
+        RDREG   0Ah, c0a
+        RDREG   0Bh, c0b
+        RDREG   0Eh, c0e
+        RDREG   0Fh, c0f
         mov     al, [t_ci]
         out     dx, al
         sti
-        mov     al, [t_g6]              ; graphics mode, memory map A000h/64K
-        and     al, 0Dh
-        cmp     al, 05h
-        jne     near .bad
-        test    byte [t_g5], 40h        ; not 256-colour shift mode
-        jne     near .bad
-        cmp     byte [c01], 4Fh         ; 80 character clocks = 640 pixels
+        cmp     byte [c01], 4Fh         ; 80 character clocks
         jne     near .bad
         xor     bx, bx                  ; visible lines = vertical display end + 1
         mov     bl, [c12]
@@ -428,34 +705,86 @@ hwchk:  mov     dx, 3CCh                ; misc output: colour (3Dx) addressing?
         or      bh, 2
 .v9:    inc     bx
         mov     [vlines], bx
-        cmp     bx, 350
-        jb      near .bad
         cmp     bx, MAXLINES
         ja      near .bad
+        mov     ah, [c0c]
+        mov     al, [c0d]
+        mov     [crtstart], ax
+        mov     al, [t_g6]
+        and     al, 0Dh
+        cmp     al, 05h                 ; graphics, memory map A000h/64K
+        je      short .gfx
+        cmp     al, 0Ch                 ; text, memory map B800h/32K
+        jne     near .bad
+        ; ---- text mode ----
+        test    byte [t_s1], 08h        ; 40-column modes (half dot clock): not handled
+        jne     near .bad
+        test    byte [c09], 80h         ; double scan: not handled
+        jne     near .bad
+        cmp     bx, 200
+        jb      near .bad
+        mov     al, [c09]
+        and     al, 1Fh
+        inc     al
+        cmp     al, 16
+        ja      near .bad
+        cmp     al, 8                   ; (also keeps the row division below 256)
+        jb      near .bad
+        mov     [tch], al
+        mov     ax, bx                  ; rows = lines / cell height
+        div     byte [tch]
+        mov     [trows], al
+        mov     byte [tcw], 9
+        test    byte [t_s1], 01h
+        jz      short .c9
+        mov     byte [tcw], 8
+.c9:    movzx   ax, byte [c13]          ; bytes per row = offset register * 4 (word mode)
+        shl     ax, 2
+        cmp     ax, 160
+        jb      near .bad
+        mov     [tstride], ax
+        mov     al, 2
+        ret
+.gfx:   test    byte [t_g5], 40h        ; not 256-colour shift mode
+        jne     near .bad
+        cmp     bx, 350
+        jb      near .bad
         cmp     byte [c13], 28h         ; 80 bytes per line
         jne     near .bad
         test    byte [c09], 9Fh         ; no double scan, 1 scan line per row (rejects 640x200 modes)
         jne     near .bad
-        mov     ah, [c0c]
-        mov     al, [c0d]
-        mov     [crtstart], ax
         mov     al, 1
         ret
 .bad:   xor     al, al
         ret
 
 ;--------------------------------------------------------------------------------------------------
-; enable: (640*scale) x (vlines*scale) x 32bpp
+; enable: (modew*scale) x (vlines*scale) x 32bpp for [newmode].
+;         CF=1 (and SVGA off) if the VM's limits do not allow that size.
 ;--------------------------------------------------------------------------------------------------
-enable: movzx   ebx, byte [scale]
-        imul    ebx, ebx, 640
+enable: movzx   ebx, word [modew]
+        movzx   ecx, byte [scale]
+        imul    ebx, ecx                ; EBX = width
+        cmp     ebx, [maxw]
+        ja      near .no
+        movzx   eax, word [vlines]
+        imul    eax, ecx                ; EAX = height
+        cmp     eax, [maxh]
+        ja      near .no
+        push    eax
+        imul    eax, ebx
+        shl     eax, 2
+        cmp     eax, [vram]
+        pop     eax
+        ja      near .no
+        mov     [lbdw], ebx
+        mov     dx, bx
+        shl     dx, 1
+        mov     [lbwords], dx
+        push    eax
         mov     ax, SVGA_REG_WIDTH
         call    svga_out
-        mov     ax, [vlines]
-        mov     [curv], ax
-        movzx   ebx, ax
-        movzx   ecx, byte [scale]
-        imul    ebx, ecx
+        pop     ebx
         mov     ax, SVGA_REG_HEIGHT
         call    svga_out
         SVGA_OUT SVGA_REG_BITS_PER_PIXEL, 32
@@ -465,9 +794,22 @@ enable: movzx   ebx, byte [scale]
         SVGA_IN SVGA_REG_FB_OFFSET
         add     eax, [fbstart]
         mov     [fbbase], eax
+        mov     al, [newmode]
+        mov     [curmode], al
+        mov     ax, [vlines]
+        mov     [curv], ax
+        mov     ax, [modew]
+        mov     [curw], ax
         mov     byte [enabled], 1
         mov     byte [force], 1
         mov     byte [paldirty], 0
+        mov     byte [fontdirty], 1
+        clc
+        ret
+.no:    cmp     byte [enabled], 0
+        je      short .no2
+        call    disable
+.no2:   stc
         ret
 
 disable:                                ; callable with any DS
@@ -630,6 +972,43 @@ susp    db      0
 force   db      0
 paldirty db     0
 scale   db      2
+fontdirty db    1
+newmode db      0
+curmode db      0
+tcw     db      0                       ; text: cell width (8/9), height, rows
+tch     db      0
+trows   db      0
+bgmask  db      0
+tcur    db      0
+tchar   db      0
+tbits   db      0
+cstart  db      0
+cend    db      0
+t_si    db      0
+t_s1    db      0
+f_s2    db      0
+f_s3    db      0
+f_s4    db      0
+f_g4    db      0
+f_g5    db      0
+f_g6    db      0
+c0a     db      0
+c0b     db      0
+c0e     db      0
+c0f     db      0
+        align   2, db 0
+modew   dw      0
+curw    dw      0
+tstride dw      0
+trow    dw      0
+tline   dw      0
+currow  dw      0
+curcol  dw      0
+        align   4, db 0
+tbg     dd      0
+maxw    dd      0
+maxh    dd      0
+vram    dd      0
 s_si    db      0
 s_mm    db      0
 s_gi    db      0
@@ -650,7 +1029,9 @@ c09     db      0
 pal32   times 16 dd 0
 hashes  times MAXLINES dd 0
 chunk   times 4*CHUNKSZ db 0
-linebuf times 640*MAXSCALE*4 db 0
+linebuf times 720*MAXSCALE*4 db 0
+rowbuf  times 160 db 0
+fontc   times 256*16 db 0
 %ifdef TRACE
 trpos   dw      0
 trbuf   times 1024 db 0
@@ -757,11 +1138,13 @@ init:   cld
         shl     ax, 1
         mov     [lbwords], ax
         SVGA_IN SVGA_REG_MAX_WIDTH
+        mov     [maxw], eax
         cmp     eax, [lbdw]
         jb      near e_size
         movzx   ebx, byte [scale]
         imul    ebx, ebx, MAXLINES
         SVGA_IN SVGA_REG_MAX_HEIGHT
+        mov     [maxh], eax
         cmp     eax, ebx
         jb      near e_size
         imul    ebx, [lbdw]             ; bytes needed = width*4 * height
@@ -950,9 +1333,8 @@ tbB     times 32 db 0EEh
 tbP     db      'SVGA2X INT15/87 write test 1234', 0
 rseg    dw      0
 f_u     db      0
-vram    dd      0
 
-m_title   db 'SVGA2X 0.2.0 - VGA 640x480 16-colour screen at 2x/3x on VMware SVGA II', 13, 10, '$'
+m_title   db 'SVGA2X 0.3.0 - VGA 16-colour graphics and 80-column text at 2x/3x on VMware SVGA II', 13, 10, '$'
 m_inst    db 'Installed.  SVGA2X /U = remove, /Rn = update every n ticks (1-9)', 13, 10, '$'
 m_help    db 'Usage: SVGA2X [/Sn] [/Rn] | /U', 13, 10
           db '  (none)  install resident', 13, 10
