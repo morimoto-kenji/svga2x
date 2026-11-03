@@ -72,8 +72,10 @@ The output is only pixel-sharp when VMware shows it 1:1:
 - 3x (1920x1440) needs a 2560x1440 or larger host screen.
 
 Before installing, SVGA2X checks that the VM allows the resolution (`SVGA_REG_MAX_WIDTH/HEIGHT`
-and VRAM size). If a `.vmx` limits the display, e.g. `svga.maxWidth = "640"`, SVGA2X refuses with
-a message; remove or raise `svga.maxWidth`, `svga.maxHeight` (and `svga.vramSize` if set).
+and VRAM size). If the `.vmx` limits the display, SVGA2X refuses with a message. VMware only applies
+`svga.maxWidth` / `svga.maxHeight` when `svga.autodetect = "FALSE"` is also set (with the default
+autodetect, a VM with `svga.maxWidth = "640"` still allows 2360x1773); in that case remove or raise
+those values. `svga.vramSize` below about 5 MB (2x) or 11 MB (3x) is also too small.
 
 ## Building from source
 

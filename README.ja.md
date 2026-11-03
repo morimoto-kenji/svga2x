@@ -71,8 +71,10 @@ SVGA2X /?       使い方を表示する
 - 3倍（1920x1440）には、2560x1440 以上のホスト画面が必要です。
 
 常駐する前に、VM がその解像度を許すか（`SVGA_REG_MAX_WIDTH/HEIGHT` と画面メモリの量）を確かめます。
-`.vmx` で表示が制限されている場合（例: `svga.maxWidth = "640"`）は、理由を表示して常駐しません。
-`svga.maxWidth`、`svga.maxHeight`（指定があれば `svga.vramSize` も）を削除するか、値を大きくしてください。
+`.vmx` で表示が制限されている場合は、理由を表示して常駐しません。VMware が `svga.maxWidth`・`svga.maxHeight` を
+適用するのは `svga.autodetect = "FALSE"` もあるときだけです（既定の自動検出では、`svga.maxWidth = "640"` が
+あっても 2360x1773 まで使えます）。その場合は、これらを削除するか値を大きくしてください。`svga.vramSize` が
+約5MB（2倍）・約11MB（3倍）より小さい場合も足りません。
 
 ## ソースからのビルド
 

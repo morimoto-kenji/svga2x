@@ -1398,7 +1398,7 @@ tbP     db      'SVGA2X INT15/87 write test 1234', 0
 rseg    dw      0
 f_u     db      0
 
-m_title   db 'SVGA2X 0.3.1 - VGA 16-colour graphics and 80-column text at 2x/3x on VMware SVGA II', 13, 10, '$'
+m_title   db 'SVGA2X 0.3.1 - VGA graphics and 80-column text at 2x/3x on VMware SVGA II', 13, 10, '$'
 m_inst    db 'Installed.  SVGA2X /U = remove, /? = help', 13, 10, '$'
 m_help    db 'Usage: SVGA2X [/Sn] [/Rn] | /U', 13, 10
           db '  (none)  install resident', 13, 10
@@ -1415,5 +1415,5 @@ m_87      db 'Error: INT 15h AH=87h cannot reach the framebuffer (V86 mode).', 1
 m_nodev   db 'Error: VMware SVGA II not found.', 13, 10, '$'
 m_id      db 'Error: unexpected SVGA ID or framebuffer address.', 13, 10, '$'
 m_scale   db 'Error: /S must be 2 or 3.', 13, 10, '$'
-m_size    db 'Error: the VM does not allow this resolution (max width/height or VRAM too small;', 13, 10
-          db '       check svga.maxWidth, svga.maxHeight, svga.vramSize in the .vmx).', 13, 10, '$'
+m_size    db 'Error: the VM does not allow this resolution (maximum size or VRAM too small).', 13, 10
+          db '       Check svga.autodetect, svga.maxWidth/Height, svga.vramSize in the .vmx.', 13, 10, '$'

@@ -11,7 +11,8 @@
 - Fix: the resident part kept the standard handles open, so each `SVGA2X > NUL` used up one
   DOS file table entry for good; after enough installs, redirection and pipes failed ("Cannot
   execute FIND.EXE"). The handles are now closed before going resident.
-- The install message points to `/?` instead of listing only `/R`.
+- The install message points to `/?` instead of listing only `/R`; messages fit in 80 columns.
+- README: VMware applies `svga.maxWidth` / `svga.maxHeight` only with `svga.autodetect = "FALSE"`.
 
 ## 0.3.0 (unreleased)
 
