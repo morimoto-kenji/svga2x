@@ -33,8 +33,7 @@ Part of a Japanese DOS/V screen, shown at its real pixel size (MS-DOS 6.2/V):
 
 ![With SVGA2X](docs/images/crop-2x.png)
 
-Whole screen: [without (640x475)](docs/images/dosv-1x.png) / [with (1280x950)](docs/images/dosv-2x.png).
-The 2x screen is pixel-for-pixel the 1x screen with every pixel turned into a 2x2 block.
+The "with" image is pixel-for-pixel the "without" image with every pixel turned into a 2x2 block.
 
 ## Features
 
