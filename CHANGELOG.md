@@ -1,6 +1,15 @@
 # Changelog
 
-## 0.3.1 (unreleased)
+## 0.4.0 (unreleased)
+
+- Changed: `SVGA2X` without options now shows the status (installed or not, scale, update rate,
+  and whether the screen is shown at 2x/3x, in the normal display, or dormant after Windows).
+  Installing needs `/S2` or `/S3`; `/Rn` is accepted only together with one of them.
+- Messages say "resident" instead of "installed"; the install message is just "Now resident.";
+  every run shows the author and contact address.
+- Author and contact address in the source, LICENSE and README.
+
+## 0.3.1 (not released separately; included in 0.4.0)
 
 - Fix: during endless text output (e.g. `DIR` in a batch loop) the 2x picture froze for tens of
   seconds, because almost every timer tick arrived while INT 10h was running and the pass was

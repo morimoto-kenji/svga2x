@@ -4,7 +4,7 @@
 
 [日本語版 README](README.ja.md)
 
-A DOS guest in VMware runs at 640x480, which looks small on today's monitors. VMware's "Stretch
+A DOS guest in VMware runs at 640x480, which looks small on high-resolution monitors such as Full HD. VMware's "Stretch
 guest" option enlarges it with interpolation, which softens the edges.
 
 SVGA2X stays resident in DOS and re-displays the screen at 1280x960 (2x) or 1920x1440 (3x). Each
@@ -13,7 +13,17 @@ the host.
 
 ## Before / after
 
-The same part of the same screen, shown at its real pixel size (MS-DOS 6.2/V):
+The whole VMware window (1920x1040, MS-DOS Shell):
+
+**Without SVGA2X** (640x480)
+
+![Without SVGA2X (whole window)](docs/images/window-1x.png)
+
+**With SVGA2X** (1280x960)
+
+![With SVGA2X (whole window)](docs/images/window-2x.png)
+
+Part of a Japanese DOS/V screen, shown at its real pixel size (MS-DOS 6.2/V):
 
 **Without SVGA2X** (640x475)
 
@@ -31,30 +41,41 @@ The 2x screen is pixel-for-pixel the 1x screen with every pixel turned into a 2x
 - Japanese DOS/V screens (VGA 640x480, 16 colours) at 2x / 3x (DOS/V's 475-line screen → 1280x950;
   with or without JDISP.SYS hardware scrolling)
 - 80-column text screens of English DOS etc. (80x25, 80x43, 80x50) at 2x / 3x as well
-- Other screens (320x200 games, 256 colours, VESA, ...) automatically get the normal display back;
-  SVGA2X resumes when a supported screen returns
-- Works in real mode and under memory managers (MS EMM386, JemmEx)
+- Other display modes (320x200 games, 256 colours, VESA, ...) automatically get the normal display
+  back; SVGA2X resumes when a supported mode returns
+- Works in real mode (no memory manager) and under memory managers (MS EMM386, JemmEx)
 - About 20 KB resident; can be removed with `/U`
 
 ## Requirements
 
-- VMware Workstation / Player (virtual SVGA II adapter, PCI 15AD:0405)
-- 386 or later (always true in VMware), DOS 3.3+
-- For V86 mode: the memory manager must allow `INT 15h AH=87h` copies to the framebuffer
+Host:
+
+- VMware Workstation / Player (virtual SVGA II adapter, PCI 15AD:0405). VirtualBox's VMSVGA and
+  QEMU's `-vga vmware` emulate the same device and may work, but are untested. Not for real hardware
+
+Guest (DOS):
+
+- 386 or later (always true in VMware), DOS 3.3+ (tested with MS-DOS 6.2/V only)
+- Under a memory manager (V86 mode): the memory manager must allow `INT 15h AH=87h` copies to the framebuffer
   (MS EMM386 and JemmEx do by default; JemmEx with `NOCHECK` does not)
 
 ## Usage
 
+### Running and options
+
 ```
-SVGA2X          install (resident), 2x
+SVGA2X          show the status (resident or not, scale, what is shown now)
+SVGA2X /S2      install (resident), 2x (1280x960)
 SVGA2X /S3      install, 3x (1920x1440; needs a host screen of that size)
+SVGA2X /S2 /Rn  install, update every n timer ticks (n = 1..9, default 1 = 18.2 times/s)
 SVGA2X /U       remove
-SVGA2X /Rn      update every n timer ticks (n = 1..9, default 1 = 18.2 times/s)
 SVGA2X /?       help
 ```
 
-Put it in `AUTOEXEC.BAT` after the display driver (e.g. after DOS/V's `CHEV JP`/`JDISP.SYS` are
-active). Leave VMware's "Stretch guest" off; the window will become 1280x950/960. If the window is
+Without options SVGA2X does not install; use `/S2` or `/S3` (`/Rn` goes together with one of them).
+
+Run it from the command line or from a batch file such as `AUTOEXEC.BAT`, after the display driver
+is active (e.g. after DOS/V's `JDISP.SYS` and `CHEV JP`). Leave VMware's "Stretch guest" off; the window will become 1280x950/960. If the window is
 larger than the guest screen, VMware centres it.
 
 ### Fitting the screen on the host
@@ -114,8 +135,10 @@ See [docs/TESTING.md](docs/TESTING.md) for the full test record and [docs/TECHNI
 - Windows 3.x: when Windows starts, SVGA2X steps aside for good (Windows shows its normal
   640x480 screen, and DOS stays at 1x after Windows exits; Windows can change its own resolution).
   Reason: with MS EMM386, framebuffer copies after Windows had run sometimes crashed the VM
-  (triple fault). Run `SVGA2X /U` and `SVGA2X` to get 2x back, at your own risk.
+  (triple fault). Run `SVGA2X /U` and `SVGA2X /S2` to get 2x back, at your own risk.
 
-## License
+## Author / license
+
+Author: Kenji Morimoto <github@morimoto.ne.jp>
 
 MIT — see [LICENSE](LICENSE).

@@ -1,6 +1,6 @@
 ; SVGA2X - show a DOS/V (VGA 640x480 16-colour planar) screen at 2x on VMware SVGA II
 ;
-; Copyright (c) 2026 Kenji Morimoto
+; Copyright (c) 2026 Kenji Morimoto <github@morimoto.ne.jp>
 ; SPDX-License-Identifier: MIT
 ;
 ; Build:  nasm -f bin -o SVGA2X.COM svga2x.asm
@@ -1188,7 +1188,7 @@ init:   cld
         jz      short .rm
         mov     byte [v86], 1
 .rm:
-        ; ---- command line: /U, /Rn, /Sn ----
+        ; ---- command line: /U, /Sn, /Rn (none: show the status) ----
         mov     byte [rate], 1
         mov     si, 81h
 .pa:    lodsb
@@ -1215,6 +1215,7 @@ init:   cld
         cmp     al, MAXSCALE
         ja      near e_scale
         mov     [scale], al
+        mov     byte [f_s], 1
         jmp     short .pa
 .nots:  cmp     al, 'R'
         jne     near .pa
@@ -1225,8 +1226,13 @@ init:   cld
         cmp     al, 9
         ja      short .pa
         mov     [rate], al
+        mov     byte [f_r], 1
         jmp     short .pa
-.paend:
+.paend: cmp     byte [f_r], 0           ; /Rn only together with /S2 or /S3
+        je      short .rok
+        cmp     byte [f_s], 0
+        je      near e_rneed
+.rok:
         ; ---- already installed? ----
         mov     ax, MUX_FUNC
         int     2Fh
@@ -1240,13 +1246,19 @@ init:   cld
         pop     es
         cmp     byte [f_u], 0
         jne     near uninst
+        cmp     byte [f_s], 0
+        je      near status
         PRINT   m_already
         jmp     near exit1
 .notinst:
-        cmp     byte [f_u], 0
-        je      near .doinst
+        cmp     byte [f_s], 0
+        jne     near .doinst
         PRINT   m_notinst
-        jmp     near exit1
+        cmp     byte [f_u], 0
+        jne     near exit1
+        PRINT   m_hint
+        mov     ax, 4C00h
+        int     21h
 
 .doinst:
         ; ---- find VMware SVGA II (PCI 15AD:0405) ----
@@ -1442,6 +1454,67 @@ uninst:
         mov     ax, 4C00h
         int     21h
 
+;--------------------------------------------------------------------------------------------------
+; Status of the resident copy (segment in [rseg])
+;--------------------------------------------------------------------------------------------------
+status: mov     es, [rseg]
+        PRINT   m_st1                   ; "Resident: "
+        movzx   ax, byte [es:scale]
+        call    pdec
+        PRINT   m_st2                   ; "x, update every "
+        movzx   ax, byte [es:rate]
+        call    pdec
+        mov     dx, m_st3               ; " tick." / " ticks."
+        cmp     byte [es:rate], 1
+        je      short .t1
+        mov     dx, m_st3s
+.t1:    mov     ah, 9
+        int     21h
+        cmp     byte [es:winpause], 0
+        je      short .nw
+        PRINT   m_stwin
+        jmp     short .done
+.nw:    cmp     byte [es:enabled], 0
+        jne     short .en
+        PRINT   m_stoff
+        jmp     short .done
+.en:    PRINT   m_ston                  ; "Display:  "
+        movzx   cx, byte [es:scale]
+        mov     ax, [es:curw]
+        mul     cx
+        call    pdec
+        mov     dl, 'x'
+        mov     ah, 2
+        int     21h
+        movzx   cx, byte [es:scale]
+        mov     ax, [es:curv]
+        mul     cx
+        call    pdec
+        mov     dx, m_stgr
+        cmp     byte [es:curmode], 1
+        je      short .p
+        mov     dx, m_sttx
+.p:     mov     ah, 9
+        int     21h
+.done:  mov     ax, 4C00h
+        int     21h
+
+; pdec: print AX in decimal
+pdec:   xor     cx, cx
+        mov     bx, 10
+.d:     xor     dx, dx
+        div     bx
+        push    dx
+        inc     cx
+        test    ax, ax
+        jnz     short .d
+.o:     pop     dx
+        add     dl, '0'
+        mov     ah, 2
+        int     21h
+        loop    .o
+        ret
+
 help:   PRINT   m_help
         mov     ax, 4C00h
         int     21h
@@ -1454,6 +1527,8 @@ e_cant: PRINT   m_cant
 exit1:  mov     ax, 4C01h
         int     21h
 e_87:   PRINT   m_87
+        jmp     near exit1
+e_rneed: PRINT  m_rneed
         jmp     near exit1
 e_scale: PRINT  m_scale
         jmp     near exit1
@@ -1484,18 +1559,33 @@ tbB     times 32 db 0EEh
 tbP     db      'SVGA2X INT15/87 write test 1234', 0
 rseg    dw      0
 f_u     db      0
+f_s     db      0
+f_r     db      0
 
-m_title   db 'SVGA2X 0.3.1 - VGA graphics and 80-column text at 2x/3x on VMware SVGA II', 13, 10, '$'
-m_inst    db 'Installed.  SVGA2X /U = remove, /? = help', 13, 10, '$'
-m_help    db 'Usage: SVGA2X [/Sn] [/Rn] | /U', 13, 10
-          db '  (none)  install resident', 13, 10
-          db '  /Sn     scale factor, n = 2 (default, 1280x960) or 3 (1920x1440)', 13, 10
+m_title   db 'SVGA2X 0.4.0 - VGA graphics and 80-column text at 2x/3x on VMware SVGA II', 13, 10
+          db '(c) 2026 Kenji Morimoto <github@morimoto.ne.jp>', 13, 10, '$'
+m_inst    db 'Now resident.', 13, 10, '$'
+m_help    db 'Usage: SVGA2X [/S2 | /S3 [/Rn] | /U]', 13, 10
+          db '  (none)  show the status', 13, 10
+          db '  /S2     stay resident, 2x (1280x960)', 13, 10
+          db '  /S3     stay resident, 3x (1920x1440)', 13, 10
+          db '  /Rn     (with /S2 or /S3) update every n ticks, n = 1..9 (default 1 = 18.2/s)', 13, 10
           db '  /U      remove from memory', 13, 10
-          db '  /Rn     update every n timer ticks, n = 1..9 (default 1 = 18.2 Hz)', 13, 10
           db 'Works in real mode (HIMEM only) and under EMM386 / JEMMEX (V86 mode).', 13, 10, '$'
-m_already db 'Already installed.', 13, 10, '$'
-m_notinst db 'Not installed.', 13, 10, '$'
-m_removed db 'Removed.', 13, 10, '$'
+m_already db 'Already resident.', 13, 10, '$'
+m_notinst db 'Not resident.', 13, 10, '$'
+m_hint    db 'To make it resident: SVGA2X /S2 (2x) or /S3 (3x).  Help: SVGA2X /?', 13, 10, '$'
+m_st1     db 'Resident: $'
+m_st2     db 'x, update every $'
+m_st3     db ' tick.', 13, 10, '$'
+m_st3s    db ' ticks.', 13, 10, '$'
+m_ston    db 'Display:  $'
+m_stgr    db ' (VGA graphics).', 13, 10, '$'
+m_sttx    db ' (text).', 13, 10, '$'
+m_stoff   db 'Display:  normal (this screen mode is not supported).', 13, 10, '$'
+m_stwin   db 'Display:  normal (dormant since Windows started; /U, then /S2 or /S3 resumes).', 13, 10, '$'
+m_rneed   db 'Error: /R needs /S2 or /S3.', 13, 10, '$'
+m_removed db 'Removed from memory.', 13, 10, '$'
 m_cant    db 'Cannot remove: vectors hooked by another program.', 13, 10, '$'
 m_v86ok   db 'V86 mode: framebuffer access via INT 15h AH=87h verified.', 13, 10, '$'
 m_87      db 'Error: INT 15h AH=87h cannot reach the framebuffer (V86 mode).', 13, 10, '$'

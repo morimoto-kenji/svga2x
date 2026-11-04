@@ -39,6 +39,7 @@ are run after `CHEV US`.
 | 22 | Win3.1 VM (MS-DOS 6.2/V + Windows 3.1J, MS EMM386, JDISP.SYS **with** hardware scroll: CRTC 13h = 40h, line compare 453): 2x after the stride / line-compare support; 2x capture vs 1x capture after `/U` (shifted by the two rows printed in between): 0 differing pixels of 255,360 | – | OK | – |
 | 23 | Windows 3.1 enhanced mode started and exited 3 times with SVGA2X resident: no crash, Windows at its normal 640x480, DOS at 1x afterwards, `/U` still works | – | OK | – |
 | 24 | MS-DOS Shell (DOSSHELL from the MS-DOS 6.2 Supplemental Disk): text mode → 1440x800, graphics mode (30 lines, 640x480) → 1280x960, also under DOS/V Japanese mode; back to the prompt normally | – | – | OK |
+| 25 | Options of 0.4.0: no options → status ("Not resident." / "Display:  1280x950 (VGA graphics)." / "Display:  1440x800 (text).", with "Resident: 2x, update every 2 ticks."); `/R2` alone refused; `/S2 /R2` and `/S2` install; `/S3` while resident refused; `/S4` refused; `/?`; `/U` removes a 0.3.1 copy | – | OK (0.4.0) | – |
 
 Bugs found and fixed by these tests:
 
