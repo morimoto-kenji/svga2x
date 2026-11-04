@@ -72,6 +72,8 @@ SVGA2X /?       help
 ```
 
 Without options SVGA2X does not stay resident; use `/S2` or `/S3` (`/Rn` goes together with one of them).
+`/Rn` only slows down an unchanging screen: after any screen output or cursor move SVGA2X redraws at the
+next tick (18.2 times/s while you work).
 
 Run it from the command line or from a batch file such as `AUTOEXEC.BAT`, after the display driver
 is active (e.g. after DOS/V's `JDISP.SYS` and `CHEV JP`).

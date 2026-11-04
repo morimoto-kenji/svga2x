@@ -86,8 +86,11 @@ int08:  pushf
         call    far [cs:old08]
         cmp     byte [cs:busy], 0
         jne     near .ret
-        dec     byte [cs:cnt]
-        jne     near .ret
+        dec     byte [cs:cnt]           ; every RATE ticks, or at the next tick after any INT 10h call
+        je      short .due              ; (screen output, cursor moves): with /R2 the cursor and
+        cmp     byte [cs:act], 0        ; typing follow at 18.2 Hz, while an idle screen is only
+        je      near .ret               ; redrawn every RATE ticks.
+.due:   mov     byte [cs:act], 0
         push    ax
         mov     al, [cs:rate]
         mov     [cs:cnt], al
@@ -118,6 +121,7 @@ int08:  pushf
 ; INT 10h: turn SVGA off before a mode set, re-read the palette / track VBE modes afterwards.
 ;--------------------------------------------------------------------------------------------------
 int10:  inc     byte [cs:in10]
+        mov     byte [cs:act], 1
 %ifdef TRACE
         cmp     ah, 02h                 ; debug: log AX/BX of INT 10h calls (except text output)
         je      .notr
@@ -1099,6 +1103,7 @@ lcmp    dw      3FFh                    ; graphics: CRTC line compare
 laddr   times CH_LINES dw 0
 busy    db      0
 winpause db     0                       ; set while Windows switches modes (INT 2Fh 1605h..1608h, 1609h..1606h)
+act     db      0                       ; INT 10h was called since the last pass
 pend    db      0                       ; a pass was skipped because INT 10h was running
 callfl  dw      0                       ; caller's flags for the BIOS call (INT 10h hook)
 in10    db      0
@@ -1562,7 +1567,7 @@ f_u     db      0
 f_s     db      0
 f_r     db      0
 
-m_title   db 'SVGA2X 0.4.0 - VGA graphics and 80-column text at 2x/3x on VMware SVGA II', 13, 10
+m_title   db 'SVGA2X 0.4.1 - VGA graphics and 80-column text at 2x/3x on VMware SVGA II', 13, 10
           db '(c) 2026 Kenji Morimoto <github@morimoto.ne.jp>', 13, 10, '$'
 m_inst    db 'Now resident.', 13, 10, '$'
 m_help    db 'Usage: SVGA2X [/S2 | /S3 [/Rn] | /U]', 13, 10

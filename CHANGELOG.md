@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1 (2026-11-04)
+
+- With `/Rn` (n > 1), the screen is redrawn at the next timer tick after any INT 10h call (text
+  output, cursor moves), so the cursor no longer jumps in file managers such as FD; only an
+  unchanging screen is redrawn every n ticks. Idle CPU use is unchanged (KTBBS waiting screen with
+  `/R2`: about 6 %).
+
 ## 0.4.0 (2026-11-04)
 
 - Changed: `SVGA2X` without options now shows the status (resident or not, scale, update rate,

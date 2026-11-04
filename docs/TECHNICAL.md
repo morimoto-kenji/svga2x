@@ -106,7 +106,9 @@ dominates the cost under VMware: per-line register handling cost 19.4 % host CPU
   is left to the end of that INT 10h instead: the INT 10h hook runs it on the way out of the
   outermost call (when the caller had interrupts enabled). Without this, endless text output such
   as `DIR` in a loop is inside INT 10h at almost every tick and the 2x picture froze for tens of
-  seconds at a time (found by the long-running test, fixed in 0.3.1).
+  seconds at a time (found by the long-running test, fixed in 0.3.1). A pass is due every `/Rn`
+  ticks, or at the next tick after any INT 10h call (0.4.1): with `/R2` a moving cursor was only
+  caught 9 times a second and seemed to jump, while an unchanging screen does not need more.
 - **INT 10h**: after AH=00h (set mode) SVGA is disabled (doing it *before* the BIOS mode set made
   VMware show 640x200 double-scan modes as garbage). For AX=4F02h (VBE set mode) SVGA2X only
   forgets that it owns the SVGA and lets the VBE BIOS take it over (writing ENABLE=0 first made the
