@@ -4,8 +4,8 @@
 
 [日本語版 README](README.ja.md)
 
-A DOS guest in VMware runs at 640x480, which looks small on high-resolution monitors such as Full HD. VMware's "Stretch
-guest" option enlarges it with interpolation, which softens the edges.
+A DOS guest in VMware runs at 640x480, which looks small on high-resolution monitors such as
+Full HD. VMware's "Stretch guest" option enlarges it with interpolation, which softens the edges.
 
 SVGA2X stays resident in DOS and re-displays the screen at 1280x960 (2x) or 1920x1440 (3x). Each
 pixel simply becomes a 2x2 or 3x3 block, so nothing is blurred. Nothing needs to be installed on
@@ -40,7 +40,7 @@ The 2x screen is pixel-for-pixel the 1x screen with every pixel turned into a 2x
 
 - Japanese DOS/V screens (VGA 640x480, 16 colours) at 2x / 3x (DOS/V's 475-line screen → 1280x950;
   with or without JDISP.SYS hardware scrolling)
-- 80-column text screens of English DOS etc. (80x25, 80x43, 80x50) at 2x / 3x as well
+- 80-column text screens of English DOS etc. (80x25, 80x43, 80x50) at 2x / 3x as well (80x25 → 1440x800)
 - Other display modes (320x200 games, 256 colours, VESA, ...) automatically get the normal display
   back; SVGA2X resumes when a supported mode returns
 - Works in real mode (no memory manager) and under memory managers (MS EMM386, JemmEx)
@@ -65,18 +65,20 @@ Guest (DOS):
 
 ```
 SVGA2X          show the status (resident or not, scale, what is shown now)
-SVGA2X /S2      install (resident), 2x (1280x960)
-SVGA2X /S3      install, 3x (1920x1440; needs a host screen of that size)
-SVGA2X /S2 /Rn  install, update every n timer ticks (n = 1..9, default 1 = 18.2 times/s)
-SVGA2X /U       remove
+SVGA2X /S2      stay resident, 2x (1280x960)
+SVGA2X /S3      stay resident, 3x (1920x1440; needs a host screen of that size)
+SVGA2X /S2 /Rn  stay resident, update every n timer ticks (n = 1..9, default 1 = 18.2 times/s)
+SVGA2X /U       remove from memory
 SVGA2X /?       help
 ```
 
-Without options SVGA2X does not install; use `/S2` or `/S3` (`/Rn` goes together with one of them).
+Without options SVGA2X does not stay resident; use `/S2` or `/S3` (`/Rn` goes together with one of them).
 
 Run it from the command line or from a batch file such as `AUTOEXEC.BAT`, after the display driver
-is active (e.g. after DOS/V's `JDISP.SYS` and `CHEV JP`). Leave VMware's "Stretch guest" off; the window will become 1280x950/960. If the window is
-larger than the guest screen, VMware centres it.
+is active (e.g. after DOS/V's `JDISP.SYS` and `CHEV JP`).
+
+Leave VMware's "Stretch guest" off; at 2x the window becomes 1280x950/960 (1440x800 for text
+screens). If the window is larger than the guest screen, VMware centres it.
 
 ### Fitting the screen on the host
 
@@ -93,7 +95,7 @@ The output is only pixel-sharp when VMware shows it 1:1:
   screen, but not pixel-sharp.
 - 3x (1920x1440) needs a 2560x1440 or larger host screen.
 
-Before installing, SVGA2X checks that the VM allows the resolution (`SVGA_REG_MAX_WIDTH/HEIGHT`
+Before going resident, SVGA2X checks that the VM allows the resolution (`SVGA_REG_MAX_WIDTH/HEIGHT`
 and VRAM size). If the `.vmx` limits the display, SVGA2X refuses with a message. VMware only applies
 `svga.maxWidth` / `svga.maxHeight` when `svga.autodetect = "FALSE"` is also set (with the default
 autodetect, a VM with `svga.maxWidth = "640"` still allows 2360x1773); in that case remove or raise
@@ -122,8 +124,7 @@ See [docs/TESTING.md](docs/TESTING.md) for the full test record and [docs/TECHNI
 
 ## Limitations / known issues
 
-- VMware only (uses the SVGA II register interface directly). VirtualBox's VMSVGA adapter
-  and QEMU's `-vga vmware` emulate the same device but have not been tested.
+- Uses VMware's SVGA II registers directly, so it is untested outside VMware (see Requirements).
 - Full-screen scrolling under a V86 memory manager is CPU-heavy (one `INT 15h` call per scan
   line). Writing the framebuffer directly from a JemmEx JLM (a ring-0 extension module) should be
   faster, but this is not implemented.
