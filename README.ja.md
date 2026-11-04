@@ -14,21 +14,21 @@ SVGA2X は DOS に常駐して、画面を 1280x960（2倍）または 1920x1440
 
 VMware のウインドウ全体（1920x1040、MS-DOS Shell）:
 
-**SVGA2X なし**（640x480）
+**SVGA2X なし**（画面 640x480）
 
 ![SVGA2X なし（ウインドウ全体）](docs/images/window-1x.png)
 
-**SVGA2X あり**（1280x960）
+**SVGA2X あり**（画面 1280x960）
 
 ![SVGA2X あり（ウインドウ全体）](docs/images/window-2x.png)
 
 DOS/V の日本語画面の一部を、実際のドット数のまま載せています（MS-DOS 6.2/V）。
 
-**SVGA2X なし**（640x475）
+**SVGA2X なし**（画面 640x475 の一部）
 
 ![SVGA2X なし](docs/images/crop-1x.png)
 
-**SVGA2X あり**（1280x950）
+**SVGA2X あり**（画面 1280x950 の一部）
 
 ![SVGA2X あり](docs/images/crop-2x.png)
 

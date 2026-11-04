@@ -15,21 +15,21 @@ the host.
 
 The whole VMware window (1920x1040, MS-DOS Shell):
 
-**Without SVGA2X** (640x480)
+**Without SVGA2X** (640x480 screen)
 
 ![Without SVGA2X (whole window)](docs/images/window-1x.png)
 
-**With SVGA2X** (1280x960)
+**With SVGA2X** (1280x960 screen)
 
 ![With SVGA2X (whole window)](docs/images/window-2x.png)
 
 Part of a Japanese DOS/V screen, shown at its real pixel size (MS-DOS 6.2/V):
 
-**Without SVGA2X** (640x475)
+**Without SVGA2X** (part of the 640x475 screen)
 
 ![Without SVGA2X](docs/images/crop-1x.png)
 
-**With SVGA2X** (1280x950)
+**With SVGA2X** (part of the 1280x950 screen)
 
 ![With SVGA2X](docs/images/crop-2x.png)
 
