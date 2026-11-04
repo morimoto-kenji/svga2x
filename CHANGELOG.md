@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 (unreleased)
+## 0.4.0 (2026-11-04)
 
 - Changed: `SVGA2X` without options now shows the status (resident or not, scale, update rate,
   and whether the screen is shown at 2x/3x, in the normal display, or dormant after Windows).
