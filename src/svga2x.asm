@@ -40,6 +40,7 @@ SVGA_REG_FB_START       equ 13
 SVGA_REG_FB_OFFSET      equ 14
 SVGA_REG_VRAM_SIZE      equ 15
 SVGA_ID_2               equ 90000002h
+SVGA_PALETTE_BASE       equ 1024
 
 MUX_FUNC  equ   0E700h                  ; INT 2Fh install check: AX=E700h -> AL=FFh, BX='2X', ES=seg
 MUX_SIG   equ   5832h                   ; '2X'
@@ -217,7 +218,28 @@ int10:  inc     byte [cs:in10]
         cmp     bx, 100h                ; VESA mode -> leave the hardware alone
         jb      near .done
         mov     byte [susp], 1
-.done:  pop     es
+.done:  ; At most once per tick, on the way out of the outermost INT 10h called with interrupts
+        ; enabled (a program, not an interrupt handler that may have interrupted one in the middle
+        ; of an attribute controller sequence), re-read the attribute controller while SVGA is on:
+        ; programs that change it (palette registers, blink bit) through the ports are followed
+        ; as soon as they call INT 10h again (e.g. to move the cursor).
+        cmp     byte [in10], 1
+        jne     short .nochk
+        cmp     byte [enabled], 0
+        je      short .nochk
+        test    byte [bp + 47], 02h     ; caller IF
+        jz      short .nochk
+        xor     ax, ax
+        mov     es, ax
+        mov     ax, [es:46Ch]
+        cmp     ax, [atick]
+        je      short .nochk
+        mov     [atick], ax
+        push    cs
+        pop     es
+        call    rdattr
+        call    chkpal
+.nochk: pop     es
         pop     ds
         popad
         ; A tick was skipped while INT 10h was running: do that pass now, on the way out of the
@@ -329,7 +351,10 @@ work:   cmp     byte [winpause], 0      ; Windows is starting or exiting
         je      near .en
 .doen:  call    enable                  ; (re)program the SVGA; CF = VM cannot show this size
         jc      near .ret
-.en:    cmp     byte [paldirty], 0
+.en:    cmp     byte [mirror], 0        ; DAC changed through the ports (e.g. a fade)?
+        je      short .nomir
+        call    chkpal
+.nomir: cmp     byte [paldirty], 0
         je      near .np
         mov     byte [force], 1
         mov     byte [paldirty], 0
@@ -515,15 +540,14 @@ textpass:
         call    readfont
         mov     byte [fontdirty], 0
         mov     byte [force], 1
-.fok:   push    ds                      ; BIOS data: tick count (cursor blink), mode-select shadow
+.fok:   push    ds                      ; BIOS data: tick count (cursor blink)
         xor     ax, ax
         mov     ds, ax
         mov     al, [46Ch]
-        mov     ah, [465h]
         pop     ds
-        mov     byte [bgmask], 0Fh      ; 3x8 mode-select bit 5 = blink enabled -> 8 background colours
-        test    ah, 20h
-        jz      short .nobl
+        mov     byte [bgmask], 0Fh      ; attribute mode control bit 3 = blink -> 8 background colours
+        test    byte [a10], 08h         ; (not the BIOS shadow at 0:465h, which programs that set
+        jz      short .nobl             ; the register through the ports do not update)
         mov     byte [bgmask], 07h
 .nobl:  mov     word [currow], 0FFFFh   ; cursor position (row/col on screen), or none
         test    byte [c0a], 20h         ; cursor disabled
@@ -942,71 +966,163 @@ disable:                                ; callable with any DS
         ret
 
 ;--------------------------------------------------------------------------------------------------
-; getpal: build pal32[16] (B,G,R,0) from attribute palette -> DAC.  DS=ES=CS.
-;         Reads the VGA registers through the ports.  (It used the BIOS, INT 10h AX=1007h/1015h,
-;         before 0.4.2, but VMware's VGA BIOS takes about one frame (16 ms) per call, so the 32
-;         calls took half a second, and DOSSHELL, which calls AH=10h dozens of times, needed 16 s
-;         to start instead of 3.)  Only called after the BIOS has returned from INT 10h, so no BIOS
-;         or driver code is in the middle of an attribute controller / DAC sequence.
-;         The palette registers can only be read with PAS (bit 5 of the attribute index) = 0,
-;         which blanks the VGA output, so all 16 are read in one go with interrupts off and PAS
-;         is set again at once (with PAS = 1 every register read back as the same value).
+; getpal: re-read the attribute controller and build pal32[16] (B,G,R,0) from it and the DAC.
+;         Called only after the BIOS has returned from INT 10h (and at install), so no BIOS or
+;         driver code is in the middle of an attribute controller / DAC sequence.  DS=ES=CS.
+;         (Before 0.4.2 it used INT 10h AX=1007h/1015h; VMware's VGA BIOS takes about one frame
+;         (16 ms) per call, so the 32 calls took half a second, and DOSSHELL, which calls AH=10h
+;         dozens of times, needed 16 s to start instead of 3.)
 ;--------------------------------------------------------------------------------------------------
-getpal: pushf
+getpal: call    rdattr
+        mov     di, pal32
+        call    mkpal
+        mov     byte [paldirty], 1
+        ret
+
+;--------------------------------------------------------------------------------------------------
+; rdattr: read attribute palette registers 0..0Fh, mode control (10h), colour plane enable (12h)
+;         and colour select (14h) into attrp/a10/a12/a14.  Only at a point where nobody is in the
+;         middle of an attribute controller sequence (its index/data flip-flop cannot be read
+;         back on VMware: CRTC 24h/26h are not implemented).  The palette registers can only be
+;         read with PAS (bit 5 of the index) = 0, which blanks the VGA output for a moment
+;         (invisible while the SVGA shows our picture); with PAS = 1 every register read back as
+;         the same value.  The attribute index is restored and the flip-flop left at index.
+;--------------------------------------------------------------------------------------------------
+rdattr: pushf
         mov     dx, 3CCh                ; misc output: bit 0 = colour (3DAh) / mono (3BAh) ports
         in      al, dx
         mov     bx, 3BAh
         test    al, 1
         jz      short .mono
         mov     bx, 3DAh
-.mono:  mov     di, pal32 + 3           ; attribute register i -> pal32[i*4+3] for now
+.mono:  cli
+        mov     dx, 3C0h                ; current index (with PAS), to restore it at the end
+        in      al, dx
+        mov     [aidx], al
+        mov     di, attrp
         xor     cx, cx
-        cli
-.alp:   mov     dx, bx                  ; input status 1: reset the attribute flip-flop to index
-        in      al, dx
-        mov     dx, 3C0h
-        mov     al, cl                  ; index, PAS = 0
-        out     dx, al
-        inc     dx                      ; 3C1h: read the palette register
-        in      al, dx
+.lp:    mov     al, cl                  ; index, PAS = 0
+        call    .rd
         and     al, 3Fh
         stosb
-        add     di, 3
         inc     cx
         cmp     cx, 16
-        jb      short .alp
-        mov     dx, bx
+        jb      short .lp
+        mov     al, 30h
+        call    .rd
+        mov     [a10], al
+        mov     al, 32h
+        call    .rd
+        and     al, 0Fh
+        mov     [a12], al
+        mov     al, 34h
+        call    .rd
+        mov     [a14], al
+        mov     dx, bx                  ; restore the index (and PAS)
         in      al, dx
         mov     dx, 3C0h
-        mov     al, 20h                 ; PAS = 1: display on again
+        mov     al, [aidx]
         out     dx, al
         mov     dx, bx                  ; leave the flip-flop at index
         in      al, dx
-        mov     si, pal32
-.dlp:   mov     al, [si + 3]
-        mov     dx, 3C7h                ; DAC read index
+        popf
+        ret
+.rd:    push    ax                      ; AL = index -> AL = register
+        mov     dx, bx                  ; input status 1: reset the flip-flop to index
+        in      al, dx
+        pop     ax
+        mov     dx, 3C0h
         out     dx, al
-        mov     dx, 3C9h                ; DAC data: R, G, B (6 bit)
+        inc     dx                      ; 3C1h: read
+        in      al, dx
+        ret
+
+;--------------------------------------------------------------------------------------------------
+; mkpal: build 16 colours (B,G,R,0) at ES:DI from attrp/a10/a12/a14 and the DAC.  Pixel value i
+;        -> palette register (i AND colour plane enable) -> DAC index (colour select bits 7-6,
+;        and bits 5-4 too when mode control bit 7 is set).  The DAC is read from the VMware SVGA
+;        palette registers, which mirror it (checked at install), when possible: that does not
+;        disturb a DAC read/write sequence the foreground may be in the middle of, so it is safe
+;        in the timer interrupt.  Otherwise through the VGA ports (INT 10h context only).
+;--------------------------------------------------------------------------------------------------
+mkpal:  xor     si, si
+.lp:    mov     bx, si
+        and     bl, [a12]
+        mov     bl, [attrp + bx]
+        mov     al, [a14]
+        mov     ah, al
+        and     ah, 0Ch
+        shl     ah, 4                   ; colour select bits 3-2 -> DAC index bits 7-6
+        test    byte [a10], 80h
+        jz      short .n54
+        and     bl, 0Fh                 ; P5,P4 from colour select bits 1-0
+        and     al, 03h
+        shl     al, 4
+        or      bl, al
+        jmp     short .ix
+.n54:   and     bl, 3Fh
+.ix:    or      bl, ah                  ; BL = DAC index
+        cmp     byte [mirror], 0
+        je      short .vga
+        movzx   bx, bl
+        imul    bx, bx, 3
+        add     bx, SVGA_PALETTE_BASE
+        mov     ax, bx
+        call    svga_in
+        mov     cl, al                  ; R
+        lea     ax, [bx + 1]
+        call    svga_in
+        mov     ch, al                  ; G
+        lea     ax, [bx + 2]
+        call    svga_in                 ; AL = B
+        jmp     short .st
+.vga:   pushf
+        cli
+        mov     dx, 3C7h                ; DAC read index
+        mov     al, bl
+        out     dx, al
+        mov     dx, 3C9h                ; R, G, B (6 bit)
         in      al, dx
         mov     cl, al
         in      al, dx
         mov     ch, al
         in      al, dx
-        call    sc6                     ; B
-        mov     [si], al
-        mov     al, ch                  ; G
-        call    sc6
-        mov     [si + 1], al
-        mov     al, cl                  ; R
-        call    sc6
-        mov     [si + 2], al
-        mov     byte [si + 3], 0
-        add     si, 4
-        cmp     si, pal32 + 64
-        jb      short .dlp
         popf
-        mov     byte [paldirty], 1
+.st:    and     al, 3Fh
+        call    sc6                     ; B
+        stosb
+        mov     al, ch                  ; G
+        and     al, 3Fh
+        call    sc6
+        stosb
+        mov     al, cl                  ; R
+        and     al, 3Fh
+        call    sc6
+        stosb
+        xor     al, al
+        stosb
+        inc     si
+        cmp     si, 16
+        jb      near .lp
         ret
+
+;--------------------------------------------------------------------------------------------------
+; chkpal: rebuild the colours; if they differ from pal32, take them and redraw everything.
+;         DS=ES=CS, DF=0.
+;--------------------------------------------------------------------------------------------------
+chkpal: mov     di, paltmp
+        call    mkpal
+        mov     si, paltmp
+        mov     di, pal32
+        mov     cx, 16
+        repe    cmpsd
+        je      short .same
+        mov     si, paltmp
+        mov     di, pal32
+        mov     cx, 16
+        rep     movsd
+        mov     byte [force], 1
+.same:  ret
 
 sc6:    mov     ah, al                  ; 6-bit -> 8-bit
         shl     al, 2
@@ -1219,6 +1335,16 @@ c0d     db      0
 c09     db      0
         align   4, db 0
 pal32   times 16 dd 0
+paltmp  times 16 dd 0
+attrp   times 16 db 0                   ; attribute palette registers 0..0Fh
+a10     db      0Ch                     ; attribute mode control (bit 3: blink, bit 7: P5/P4 select)
+a12     db      0Fh                     ; colour plane enable
+a14     db      0                       ; colour select
+aidx    db      0
+mirror  db      0                       ; the SVGA palette registers mirror the VGA DAC
+        align   2, db 0
+atick   dw      0                       ; tick of the last attribute re-read at the end of INT 10h
+        align   4, db 0
 hashes  times MAXLINES dd 0
 chunk   times 4*CHUNKSZ db 0
 linebuf times 720*MAXSCALE*4 db 0
@@ -1331,6 +1457,7 @@ init:   cld
         SVGA_IN SVGA_REG_ID
         cmp     eax, SVGA_ID_2
         jne     near e_id
+        call    mirchk
         SVGA_IN SVGA_REG_FB_START
         cmp     eax, 100000h
         jb      near e_id
@@ -1588,6 +1715,60 @@ e_size: PRINT   m_size
         jmp     near exit1
 
 ; t87: EBX = source physical address, EDX = destination physical address, CX = words; CF on error
+; mirchk: do the VMware SVGA palette registers mirror the VGA DAC?  DAC entry 255 (not used by
+;         the 16-colour and text modes) is changed through the ports, compared with the SVGA
+;         register, and restored.  Sets [mirror].
+mirchk: cli
+        mov     dx, 3C7h
+        mov     al, 0FFh
+        out     dx, al
+        mov     dx, 3C9h
+        mov     di, dsav
+        mov     cx, 3
+.m1:    in      al, dx
+        and     al, 3Fh
+        stosb
+        loop    .m1
+        mov     bl, 3Fh                 ; write the complement of each component
+        call    .put
+        call    .cmp
+        mov     [mirror], al
+        xor     bl, bl                  ; restore
+        call    .put
+        call    .cmp
+        and     [mirror], al
+        sti
+        ret
+.put:   mov     dx, 3C8h
+        mov     al, 0FFh
+        out     dx, al
+        inc     dx
+        mov     si, dsav
+        mov     cx, 3
+.p1:    lodsb
+        xor     al, bl
+        out     dx, al
+        loop    .p1
+        ret
+.cmp:   mov     si, dsav                ; AL = 1 if SVGA regs = dsav XOR BL
+        mov     di, SVGA_PALETTE_BASE + 255*3
+        mov     cx, 3
+.c1:    mov     ax, di
+        call    svga_in
+        and     al, 3Fh
+        mov     ah, [si]
+        xor     ah, bl
+        cmp     al, ah
+        jne     short .c0
+        inc     si
+        inc     di
+        loop    .c1
+        mov     al, 1
+        ret
+.c0:    xor     al, al
+        ret
+dsav    db      0, 0, 0
+
 t87:    mov     [gt + 12h], bx
         push    ebx
         shr     ebx, 16

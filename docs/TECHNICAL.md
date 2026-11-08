@@ -120,7 +120,24 @@ dominates the cost under VMware: per-line register handling cost 19.4 % host CPU
   and DOSSHELL, which calls AH=10h about 30 times while starting, needed 16 s instead of 3. The
   palette registers can only be read with PAS (bit 5 of the attribute index) = 0, which blanks the
   VGA output; all 16 are read in one go with interrupts off and PAS is set again at once (with
-  PAS = 1 all 16 read back as the same value and the 2x picture was blank). The old handler is called
+  PAS = 1 all 16 read back as the same value and the 2x picture was blank). The attribute index
+  is restored afterwards. The colours follow the attribute controller fully: colour plane enable
+  (12h), colour select (14h) and the P5/P4 select bit of the mode control register (10h), and in
+  text mode the blink bit of the mode control register (before 0.4.2: the BIOS copy at 0:465h,
+  which programs that set the register through the ports do not update).
+  Programs that change the palette through the ports, without INT 10h, are followed too (0.4.2):
+  - DAC: VMware mirrors the VGA DAC into the SVGA palette registers (`SVGA_PALETTE_BASE` = 1024,
+    3 registers per entry, the same 6-bit values). Reading those registers does not touch the
+    VGA DAC's read/write state, so every pass reads the 16 entries in use there and redraws when
+    they changed (e.g. a fade). SVGA2X checks the mirror at install (DAC entry 255 is changed
+    through the ports, compared and restored) and does without it if it is missing.
+  - Attribute controller: it cannot be read safely from the timer interrupt: its index/data
+    flip-flop cannot be read back (CRTC 24h/26h are not implemented on VMware), and reading
+    resets it, which would break a program interrupted between writing the index and the data.
+    It is re-read on the way out of the outermost INT 10h called with interrupts enabled, at
+    most once per tick, while SVGA is on (the PAS = 0 blank is then invisible). A program that
+    changes it through the ports and never calls INT 10h afterwards is not followed.
+  The old handler is called
   with the caller's flags (IF/TF cleared): most BIOS functions return with IRET, so the flags the
   caller gets back are the ones pushed for the call. (0.3.0 and earlier pushed the flags left by
   its own CMP, so callers got CF=1 back and QBASIC's `PALETTE` without arguments failed.)

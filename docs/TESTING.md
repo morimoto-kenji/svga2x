@@ -42,6 +42,7 @@ are run after `CHEV US`.
 | 25 | Options of 0.4.0: no options → status ("Not resident." / "Display:  1280x950 (VGA graphics)." / "Display:  1440x800 (text).", with "Resident: 2x, update every 2 ticks."); `/R2` alone refused; `/S2 /R2` and `/S2` install; `/S3` while resident refused; `/S4` refused; `/?`; `/U` removes a 0.3.1 copy | – | OK (0.4.0) | – |
 | 26 | 0.4.1 with `/S2 /R2`: idle CPU at the DOS prompt 7.1–7.3 % (0.4.0: 6.3–7.2 %); KTBBS waiting screen 5.9–6.3 % (0.4.0: 5.0–6.4 %), line response unchanged; cursor in FD follows smoothly (checked by the user) | – | OK (0.4.1) | – |
 | 27 | 0.4.2 with `/S2` (another VM: MS-DOS 6.2/V, JemmEx with UMB at B000–B7FF): DOSSHELL starts in 2.9 s (0.4.1: 16.0 s, without SVGA2X: 2.8 s), colours unchanged; QBASIC editor 1.0 s (0.4.1: 5.1 s); `COLORS.BAS` 16 colours exact and `PALETTE` followed; `LATCH.BAS` 0 of 307,200 pixels differ from 1x; `MODES.BAS` and `S8B.BAS` identical to 0.4.1 captures; `CHEV US` / `CHEV JP` | – | – | OK (0.4.2) |
+| 28 | 0.4.2, palette changes through the ports (same VM): DAC entry changed with OUT and no INT 10h → shown within a tick; attribute palette register changed with OUT → shown after the next INT 10h (`PRINT`), not before (by design); blinking turned off through attribute register 10h → 16 background colours after the next INT 10h, as in 1x; `AX=1003h` still followed. Costs: foreground loop count with SVGA2X idle equal to no SVGA2X (±0.5 %); INT 10h AX=1100h once per tick −9 %, AH=10h set −6 % beyond the BIOS's own time; 40 × `DIR C:\DOS` 7.86 s (0.4.2 before this change 7.74–7.80 s); 8 s of `PALETTE` calls: same count as without SVGA2X. Regression: `LATCH.BAS` 0 px differ from 1x, `COLORS.BAS`, `MODES.BAS`, `S8B.BAS` identical, DEFRAG (font-based mouse pointer, 16 background colours) and MSD 0 px differ from 1x, DOSSHELL 2.8 s, `CHEV US` / `CHEV JP` | – | – | OK (0.4.2) |
 
 Bugs found and fixed by these tests:
 
@@ -70,6 +71,10 @@ Bugs found and fixed by these tests:
   BIOS. Found with a trace build that counted INT 10h calls and timed the re-reads. Fixed in
   0.4.2 (palette read through the ports, read-only subfunctions skipped). The first port version
   read the palette registers with PAS = 1 and showed a blank (white) 2x picture.
+- (test 28) Palette changes through the ports were not shown: DAC (3C8h/3C9h) and attribute
+  palette (3C0h) writes, and blinking turned off through attribute register 10h (which leaves the
+  BIOS copy at 0:465h unchanged). 1x showed the change, 2x did not. Found by tests written after
+  the review that followed test 27. Fixed in 0.4.2.
 
 ## Host CPU (VM process, one core = 100 %, DOS prompt idle)
 
@@ -89,3 +94,8 @@ Full-screen scrolling (`dir`) under V86 managers: 54 % (EMM386) / 71 % (JemmEx) 
 - Runs longer than one hour; serial communication programs running at the same time
 - DOS extenders (DOS/4GW, DJGPP); Windows 3.1 with JemmEx; the 4 MB crash with JemmEx
 - VirtualBox VMSVGA, QEMU `-vga vmware`, other VMware versions
+- Moving the mouse in text-mode programs with a font-based pointer (DEFRAG, MSBACKUP): the VNC
+  pointer does not reach the guest without a VMware mouse driver. The same load (INT 10h
+  AX=1100h once per tick) costs about 9 % of the CPU time (test 28).
+- Flicker in 1x modes (SCREEN 13) when a program calls INT 10h AH=10h many times: the palette
+  re-read blanks the VGA output for a moment (PAS = 0); captures are too slow to show it

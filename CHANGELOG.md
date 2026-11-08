@@ -7,6 +7,15 @@
   SVGA2X re-read the palette through the BIOS after every such call, and VMware's VGA BIOS takes
   about 16 ms per register read, half a second per re-read. The palette is now read directly
   from the VGA registers, and not at all after the read-only functions.
+- Fix: palette changes made through the VGA ports instead of the BIOS were not shown at 2x/3x.
+  DAC changes (e.g. fades) are now followed within a tick, using VMware's copy of the DAC in the
+  SVGA palette registers. Attribute palette changes are followed at the program's next INT 10h
+  call.
+- Fix: with blinking turned off through the VGA ports (16 background colours), text mode showed
+  dark backgrounds. The blink bit is now taken from the attribute controller, not the BIOS data
+  area.
+- The colour select and colour plane enable registers (e.g. INT 10h AX=1013h colour pages) are
+  taken into account.
 
 ## 0.4.1 (2026-11-04)
 
