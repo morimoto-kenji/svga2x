@@ -188,6 +188,18 @@ int10:  inc     byte [cs:in10]
         jmp     near .done
 .nf:    cmp     ah, 10h                 ; palette functions
         jne     near .done
+        cmp     al, 07h                 ; read-only subfunctions (read palette register / overscan /
+        je      near .done              ; all registers, read DAC register / block, read color
+        cmp     al, 08h                 ; page state) cannot change the palette.  DOSSHELL calls
+        je      near .done              ; them dozens of times while starting.
+        cmp     al, 09h
+        je      near .done
+        cmp     al, 15h
+        je      near .done
+        cmp     al, 17h
+        je      near .done
+        cmp     al, 1Ah
+        je      near .done
         call    getpal
         jmp     near .done
 .mode:  cmp     byte [enabled], 0        ; BIOS set mode: SVGA off *after* the mode set.  Turning it
@@ -930,34 +942,69 @@ disable:                                ; callable with any DS
         ret
 
 ;--------------------------------------------------------------------------------------------------
-; getpal: build pal32[16] (B,G,R,0) from attribute palette -> DAC.  DS=ES=CS; calls the BIOS
-;         directly (not through our own INT 10h hook).
+; getpal: build pal32[16] (B,G,R,0) from attribute palette -> DAC.  DS=ES=CS.
+;         Reads the VGA registers through the ports.  (It used the BIOS, INT 10h AX=1007h/1015h,
+;         before 0.4.2, but VMware's VGA BIOS takes about one frame (16 ms) per call, so the 32
+;         calls took half a second, and DOSSHELL, which calls AH=10h dozens of times, needed 16 s
+;         to start instead of 3.)  Only called after the BIOS has returned from INT 10h, so no BIOS
+;         or driver code is in the middle of an attribute controller / DAC sequence.
+;         The palette registers can only be read with PAS (bit 5 of the attribute index) = 0,
+;         which blanks the VGA output, so all 16 are read in one go with interrupts off and PAS
+;         is set again at once (with PAS = 1 every register read back as the same value).
 ;--------------------------------------------------------------------------------------------------
-getpal: xor     si, si
-        mov     di, pal32
-.lp:    mov     ax, 1007h               ; read attribute palette register BL -> BH
-        mov     bx, si
-        pushf
-        call    far [cs:old10]
-        mov     bl, bh
-        xor     bh, bh
-        mov     ax, 1015h               ; read DAC register BX -> DH=R CH=G CL=B (6 bit)
-        pushf
-        call    far [cs:old10]
-        mov     al, cl
+getpal: pushf
+        mov     dx, 3CCh                ; misc output: bit 0 = colour (3DAh) / mono (3BAh) ports
+        in      al, dx
+        mov     bx, 3BAh
+        test    al, 1
+        jz      short .mono
+        mov     bx, 3DAh
+.mono:  mov     di, pal32 + 3           ; attribute register i -> pal32[i*4+3] for now
+        xor     cx, cx
+        cli
+.alp:   mov     dx, bx                  ; input status 1: reset the attribute flip-flop to index
+        in      al, dx
+        mov     dx, 3C0h
+        mov     al, cl                  ; index, PAS = 0
+        out     dx, al
+        inc     dx                      ; 3C1h: read the palette register
+        in      al, dx
+        and     al, 3Fh
+        stosb
+        add     di, 3
+        inc     cx
+        cmp     cx, 16
+        jb      short .alp
+        mov     dx, bx
+        in      al, dx
+        mov     dx, 3C0h
+        mov     al, 20h                 ; PAS = 1: display on again
+        out     dx, al
+        mov     dx, bx                  ; leave the flip-flop at index
+        in      al, dx
+        mov     si, pal32
+.dlp:   mov     al, [si + 3]
+        mov     dx, 3C7h                ; DAC read index
+        out     dx, al
+        mov     dx, 3C9h                ; DAC data: R, G, B (6 bit)
+        in      al, dx
+        mov     cl, al
+        in      al, dx
+        mov     ch, al
+        in      al, dx
+        call    sc6                     ; B
+        mov     [si], al
+        mov     al, ch                  ; G
         call    sc6
-        stosb
-        mov     al, ch
+        mov     [si + 1], al
+        mov     al, cl                  ; R
         call    sc6
-        stosb
-        mov     al, dh
-        call    sc6
-        stosb
-        xor     al, al
-        stosb
-        inc     si
-        cmp     si, 16
-        jb      short .lp
+        mov     [si + 2], al
+        mov     byte [si + 3], 0
+        add     si, 4
+        cmp     si, pal32 + 64
+        jb      short .dlp
+        popf
         mov     byte [paldirty], 1
         ret
 
@@ -1567,7 +1614,7 @@ f_u     db      0
 f_s     db      0
 f_r     db      0
 
-m_title   db 'SVGA2X 0.4.1 - VGA graphics and 80-column text at 2x/3x on VMware SVGA II', 13, 10
+m_title   db 'SVGA2X 0.4.2 - VGA graphics and 80-column text at 2x/3x on VMware SVGA II', 13, 10
           db '(c) 2026 Kenji Morimoto <github@morimoto.ne.jp>', 13, 10, '$'
 m_inst    db 'Now resident.', 13, 10, '$'
 m_help    db 'Usage: SVGA2X [/S2 | /S3 [/Rn] | /U]', 13, 10

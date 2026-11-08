@@ -113,7 +113,14 @@ dominates the cost under VMware: per-line register handling cost 19.4 % host CPU
   VMware show 640x200 double-scan modes as garbage). For AX=4F02h (VBE set mode) SVGA2X only
   forgets that it owns the SVGA and lets the VBE BIOS take it over (writing ENABLE=0 first made the
   VBE BIOS fail). After a VBE mode >= 100h SVGA2X stays suspended until the next set-mode. After
-  AH=00h / AH=10h the palette is re-read (via the old INT 10h vector). The old handler is called
+  AH=00h and after the AH=10h subfunctions that can change it the palette is re-read; the read-only
+  ones (AL = 07h, 08h, 09h, 15h, 17h, 1Ah) are skipped. Since 0.4.2 the palette is read through the
+  ports (attribute controller 3C0h/3C1h, DAC 3C7h/3C9h) instead of INT 10h AX=1007h/1015h: VMware's
+  VGA BIOS takes about one frame (16 ms) per call, so one re-read (32 calls) took half a second,
+  and DOSSHELL, which calls AH=10h about 30 times while starting, needed 16 s instead of 3. The
+  palette registers can only be read with PAS (bit 5 of the attribute index) = 0, which blanks the
+  VGA output; all 16 are read in one go with interrupts off and PAS is set again at once (with
+  PAS = 1 all 16 read back as the same value and the 2x picture was blank). The old handler is called
   with the caller's flags (IF/TF cleared): most BIOS functions return with IRET, so the flags the
   caller gets back are the ones pushed for the call. (0.3.0 and earlier pushed the flags left by
   its own CMP, so callers got CF=1 back and QBASIC's `PALETTE` without arguments failed.)

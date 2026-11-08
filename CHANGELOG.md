@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.2 (unreleased)
+
+- Fix: programs that use the palette BIOS functions (INT 10h AH=10h) started very slowly. MS-DOS
+  Shell (DOSSHELL) took 16 s to start instead of 3 s, and the QBASIC editor 5 s instead of 1 s.
+  SVGA2X re-read the palette through the BIOS after every such call, and VMware's VGA BIOS takes
+  about 16 ms per register read, half a second per re-read. The palette is now read directly
+  from the VGA registers, and not at all after the read-only functions.
+
 ## 0.4.1 (2026-11-04)
 
 - With `/Rn` (n > 1), the screen is redrawn at the next timer tick after any INT 10h call (text

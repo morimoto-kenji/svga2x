@@ -41,6 +41,7 @@ are run after `CHEV US`.
 | 24 | MS-DOS Shell (DOSSHELL from the MS-DOS 6.2 Supplemental Disk): text mode → 1440x800, graphics mode (30 lines, 640x480) → 1280x960, also under DOS/V Japanese mode; back to the prompt normally | – | – | OK |
 | 25 | Options of 0.4.0: no options → status ("Not resident." / "Display:  1280x950 (VGA graphics)." / "Display:  1440x800 (text).", with "Resident: 2x, update every 2 ticks."); `/R2` alone refused; `/S2 /R2` and `/S2` install; `/S3` while resident refused; `/S4` refused; `/?`; `/U` removes a 0.3.1 copy | – | OK (0.4.0) | – |
 | 26 | 0.4.1 with `/S2 /R2`: idle CPU at the DOS prompt 7.1–7.3 % (0.4.0: 6.3–7.2 %); KTBBS waiting screen 5.9–6.3 % (0.4.0: 5.0–6.4 %), line response unchanged; cursor in FD follows smoothly (checked by the user) | – | OK (0.4.1) | – |
+| 27 | 0.4.2 with `/S2` (another VM: MS-DOS 6.2/V, JemmEx with UMB at B000–B7FF): DOSSHELL starts in 2.9 s (0.4.1: 16.0 s, without SVGA2X: 2.8 s), colours unchanged; QBASIC editor 1.0 s (0.4.1: 5.1 s); `COLORS.BAS` 16 colours exact and `PALETTE` followed; `LATCH.BAS` 0 of 307,200 pixels differ from 1x; `MODES.BAS` and `S8B.BAS` identical to 0.4.1 captures; `CHEV US` / `CHEV JP` | – | – | OK (0.4.2) |
 
 Bugs found and fixed by these tests:
 
@@ -64,6 +65,11 @@ Bugs found and fixed by these tests:
   copy at line 820 crashed). Doubling Windows' own screen worked, and pausing during Windows was
   not enough (the second start/exit still crashed). SVGA2X now steps aside for good when Windows
   starts.
+- (test 27) DOSSHELL took 16 s to start and the QBASIC editor 5 s: after every INT 10h AH=10h
+  call the palette was re-read with 32 BIOS calls, each about one frame long on VMware's VGA
+  BIOS. Found with a trace build that counted INT 10h calls and timed the re-reads. Fixed in
+  0.4.2 (palette read through the ports, read-only subfunctions skipped). The first port version
+  read the palette registers with PAS = 1 and showed a blank (white) 2x picture.
 
 ## Host CPU (VM process, one core = 100 %, DOS prompt idle)
 
