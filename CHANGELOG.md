@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.2 (unreleased)
+## 0.4.2 (2026-11-09)
 
 - Fix: programs that use the palette BIOS functions (INT 10h AH=10h) started very slowly. MS-DOS
   Shell (DOSSHELL) took 16 s to start instead of 3 s, and the QBASIC editor 5 s instead of 1 s.
